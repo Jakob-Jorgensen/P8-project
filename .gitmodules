@@ -1,0 +1,3 @@
+[submodule "gg-CNN/ggcnn"]
+	path = gg-CNN/ggcnn
+	url = https://github.com/dougsm/ggcnn
