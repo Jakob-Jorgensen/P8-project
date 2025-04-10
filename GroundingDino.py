@@ -16,7 +16,7 @@ image = Image.open(image_path)
 image = image.convert("RGB")
 #image = image.resize((512,512))
 # Check for cats and remote controls
-text_labels = [["yellow box most to the left"]]
+text_labels = [["yellow box"]]
 
 inputs = processor(images=image, text=text_labels, return_tensors="pt").to(device)
 with torch.no_grad():
@@ -25,8 +25,8 @@ with torch.no_grad():
 results = processor.post_process_grounded_object_detection(
     outputs,
     inputs.input_ids,
-    box_threshold=0.4,
-    text_threshold=0.3,
+    box_threshold=0.35,
+    text_threshold=0.4,
     target_sizes=[image.size[::-1]]
 )
 
@@ -34,6 +34,7 @@ image_cv = cv.imread(image_path)
 #image_cv = cv.resize(image_cv, (512,512), interpolation=cv.INTER_LINEAR)
 
 result = results[0]
+print(result)
 for box, score, labels in zip(result["boxes"], result["scores"], result["labels"]):
     box = [round(x, 2) for x in box.tolist()]
     print(f"Detected {labels} with confidence {round(score.item(), 3)} at location {box}")
