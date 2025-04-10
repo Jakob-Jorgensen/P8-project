@@ -90,7 +90,7 @@ def process_command(command, image_path):
     # Generate output (no max token limit)
     try:
         with torch.no_grad():
-            output = model.generate(**inputs, max_new_tokens=200, do_sample=False)
+            output = model.generate(**inputs, max_new_tokens=200)
         print("Output generated successfully.")
     except Exception as e:
         print(f"Error generating output: {e}")

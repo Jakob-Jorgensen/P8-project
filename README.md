@@ -1,6 +1,6 @@
 ## P8 Project - MAX VLM
 
-Welcome to our two-device project.  
+**Welcome to our two-device project.**
 In this branch, you will find your code executed on a Jetson AGX Orin, which we call Max.
 
 ### Functionality  
