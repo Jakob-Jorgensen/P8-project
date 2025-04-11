@@ -64,7 +64,7 @@ def start_tcp_server(host='localhost', port=20001):
         print(f"Error receiving data: {e}")
 
     except KeyboardInterrupt:
-        print("\nServer interrupted by user (Ctrl+C).")
+        print("\nServer interrupted by KeyboardInterrupt.")
 
     finally:
         # Gracefully close the client connection and server socket
