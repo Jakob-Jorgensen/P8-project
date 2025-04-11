@@ -10,14 +10,32 @@ Workflow:
 5. Post-process GG-CNN model outputs
 6.Draw predicted grasps on the images
 7. Visualize results
+"""   
+
+
 """  
-import cv2 
-import numpy as np 
-import torch 
-import math  
+On startup it should intilaise our model 
+Then our model should sit and wait for an input. 
+    Lets bind the input to the function call 
+
+Then it procsses that image, output in a topic and then wait for another image 
+
+""" 
+#ROS2 
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import Image
+from std_msgs.msg import Float32MultiArray
+from cv_bridge import CvBridge 
+# Code framework
+import cv2
+import numpy as np
+import torch
+import math
 from skimage.filters import gaussian
-from ggcnn.models.ggcnn import GGCNN 
-from ggcnn.models.ggcnn2 import GGCNN2 
+from ggcnn.models.ggcnn import GGCNN
+from ggcnn.models.ggcnn2 import GGCNN2
+
 
 # Device configuration  
 GRASP_WIDTH_MAX = 200.0  # Maximum grasp width for visualization 
@@ -30,7 +48,7 @@ if MODEL_CHOSE == 'ggcnn':
     NETWORK = GGCNN()
 
 elif MODEL_CHOSE == 'ggcnn2':  
-    MODEL_PATH = 'pretrainind-models/pretraind_ggcnn2.pth' # The GGCNN2 is trained on the jacquard dataset 
+    MODEL_PATH = 'pretraind-models/pretraind_ggcnn2.pth' # The GGCNN2 is trained on the jacquard dataset 
     NETWORK = GGCNN2()
 else: 
     raise ValueError('Please choose a valid model')
@@ -67,7 +85,7 @@ class GGCNNNet:
     def __init__(self, model):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')    
         # Load model
-        print('>> loading AFFGA')
+        print('>> loading gg-CNN model')
         self.net = NETWORK  # GGCNN2() or  GGCNN()
         self.net.load_state_dict(torch.load(model, map_location=self.device), strict=True)   # True: exact match, False: load only matching key-value parameters, others load default values.
         # self.net = self.net.to(device)
@@ -209,30 +227,49 @@ def depth2Gray3(im_depth):
     return ret
 
 # Load GGCNN neural network model
-model_loader=GGCNNNet(MODEL_PATH)
 
 
-# Main loop to capture frames from the camera and process them 
-while True:
- 
-    # Convert images to numpy arrays
-    depth_image = 
-    color_image = 
+# ROS 2 Node Implementation
+class GGCNNNode(Node):
+    def __init__(self):
+        super().__init__('gg_cnn_image_processing')
+        self.model_loader = GGCNNNet(MODEL_PATH)
 
+        # Create subscription to depth image topic
+        self.subscription = self.create_subscription(
+            Image,
+            '/segmented_depth_img',
+            self.gg_cnn_callback,
+            10
+        )
 
-    #outputs model predictions, input_size can be adjusted
-    row, col, grasp_angle, grasp_width_pixels  = model_loader.predict(depth_image)
+        # Publisher to output grasping information
+        self.publisher_ = self.create_publisher(Float32MultiArray, '/grasp_positions', 10)
+        self.bridge = CvBridge()
 
-    # Convert depth image to 3-channel 8-bit grayscale image 
-    depth_3d = depth2Gray3(depth_image) 
+    def gg_cnn_callback(self, msg):
+        # Convert ROS Image message to OpenCV image
+        try:
+            depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
+        except Exception as e:
+            self.get_logger().error(f"Error converting image: {e}")
+            return
 
-    # Draw grasps 
-    img_grashp=drawGrasps(depth_3d, [[row, col, grasp_angle, grasp_width_pixels]], mode='line')
-    img_grashp_RGB = drawGrasps(color_image, [[row, col, grasp_angle, grasp_width_pixels]], mode='line')
-    
-    cv2.imshow('img_grasp', np.hstack((img_grashp, img_grashp_RGB)) )
-    if cv2.waitKey(1) & 0xFF == ord('q'): 
-        break 
+        # Process the image using the GG-CNN model
+        row, col, grasp_angle, grasp_width_pixels = self.model_loader.predict(depth_image)
 
-pipeline.stop()
-cv2.destroyAllWindows()
+        # Prepare the output message with the grasp position (row, col), angle, and width
+        grasp_msg = Float32MultiArray()
+        grasp_msg.data = [row, col, grasp_angle, grasp_width_pixels]
+
+        # Publish the grasp information
+        self.publisher_.publish(grasp_msg)
+        self.get_logger().info(f"Published grasp position: {grasp_msg.data}")
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = GGCNNNode()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
