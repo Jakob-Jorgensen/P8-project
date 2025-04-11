@@ -5,7 +5,6 @@ import geometry_msgs.msg
 from scipy.spatial.transform import Rotation as R  # SciPy for quaternion math
 import numpy as np
 import socket
-import threading
 
 class Panda_Custom_Controller(): 
     def __init__(self):
@@ -31,13 +30,15 @@ class Panda_Custom_Controller():
         rospy.logerr("Hello world!")
 
         self.host = 'localhost'
-        self.port = 20002
+        self.port = 20001
 
         # Create a UDP socket
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         # Connect to the server
         self.sock.connect((self.host, self.port))
+        self.sock.settimeout(5.0)
+
         
         rospy.loginfo(f"Connected to {self.host}:{self.port}")
 
@@ -51,9 +52,6 @@ class Panda_Custom_Controller():
                                           [ 0.0, 0.0, 1.0, 0.0 ],
                                           [ 0.0, 0.0, 0.0, 1.0 ]])
         
-
-       # tcp_thread = threading.Thread(target=self.tcp_receive, args=())
-       # tcp_thread.start()
 
         ################
         #### HOMING ####
@@ -76,17 +74,32 @@ class Panda_Custom_Controller():
         #### END OF HOMING ####
         #######################
 
-        while True:
-            self.tcp_receive()
-                
-            try:
-              #  rospy.loginfo(f"received_command: \n{self.received_command}\ncommand: \n{self.command}")
-                if not np.array_equal(self.received_command[0], self.command[0]):
-                    self.command = self.received_command
-                    pose = self.homogenous_transformation_matrix_to_pose(self.command[0], input_frame_of_reference=self.command[1], move_when_done=True, relative_movement=True)
 
-            except Exception as e:
-                rospy.logerr(f"Failed with error: \n{e}")
+    def run(self):
+        try:
+            while not rospy.is_shutdown():
+                self.tcp_receive()
+
+                try:
+                    if not np.array_equal(self.received_command[0], self.command[0]):
+                        self.command = self.received_command
+                        pose = self.homogenous_transformation_matrix_to_pose(
+                            self.command[0],
+                            input_frame_of_reference=self.command[1],
+                            move_when_done=True,
+                            relative_movement=True
+                        )
+                except Exception as e:
+                    rospy.logerr_throttle(10, f"Failed with error: \n{e}")
+
+        except KeyboardInterrupt or TimeoutError:
+            rospy.loginfo("Shutting down due to KeyboardInterrupt.")
+        finally:
+            self.sock.close()
+            rospy.loginfo("Socket closed cleanly.")
+            moveit_commander.roscpp_shutdown()
+            rospy.loginfo("MoveIt closed cleanly.")
+
 
 
     def homogenous_transformation_matrix_to_pose(self, homogenous_transformation_matrix: np.ndarray, input_frame_of_reference: str, move_when_done: bool=False, relative_movement: bool=True):
@@ -166,7 +179,28 @@ class Panda_Custom_Controller():
         """
 
         self.manipulator_group.set_pose_target(target_pose)
-        plan = self.manipulator_group.go(wait=True)
+        self.manipulator_group.set_pose_target(target_pose)
+
+        plan = self.manipulator_group.plan()
+
+        rospy.logdebug(f"Plan: {plan}")
+
+        if plan and plan[0]:  # plan[0] is the success flag
+            result = self.manipulator_group.execute(plan[1], wait=True)
+
+            if result:
+                rospy.loginfo("Motion execution succeeded.")
+                # Send the result as a string over TCP
+                self.tcp_send("Motion execution succeeded.")
+            else:
+                rospy.logwarn("Motion execution failed during execution.")
+                # Send the failure message over TCP
+                self.tcp_send("Motion execution failed during execution.")
+        else:
+            rospy.logwarn("Motion planning failed.")
+            # Send the failure message over TCP
+            self.tcp_send("Motion planning failed.")
+
         self.manipulator_group.stop()
         self.manipulator_group.clear_pose_targets()
         return plan
@@ -263,7 +297,7 @@ class Panda_Custom_Controller():
 
 
     def tcp_receive(self, buffer_size=1024):
-        rospy.loginfo(f"Receiving data from {self.host}:{self.port}...")
+        rospy.loginfo_throttle_identical(10, f"Receiving data from {self.host}:{self.port}...")
 
         try:
             # Receive message from the server
@@ -281,19 +315,32 @@ class Panda_Custom_Controller():
                 self.received_command = [matrix, frame]  # You now only have the matrix, as the frame is separate
 
             else:
-                rospy.logwarn("No data received or connection closed by the server.")
+                rospy.logwarn_throttle(10, "No data received or connection closed by the server.")
 
         except Exception as e:
-            rospy.logerr(f"Client stopped with error: {e}.")
+            rospy.logerr_throttle(10, f"Client stopped with error: {e}.")
             self.sock.close()
-            rospy.loginfo("Connection closed.")
 
 
-    def rebuild_matrix(self, matrix_data):
-        # Convert the byte data back into a numpy array and reshape it into a 4x4 matrix
-        transformation_matrix = np.frombuffer(matrix_data, dtype=np.float32).copy().reshape(4, 4)
-        return transformation_matrix
-        
+    def tcp_send(self, message):
+        """
+        Sends a message (motion plan/result) as a string to the server over TCP.
+
+        :param message: The message to be sent (e.g., result or motion plan)
+        """
+        try:
+            rospy.logdebug(f"Sending message to {self.host}:{self.port}...")
+
+            # Encode the message as bytes (null-terminated string)
+            message_bytes = message.encode('utf-8') + b'\0'  # Null-terminate string
+
+            # Send the message
+            self.sock.sendall(message_bytes)
+            rospy.logdebug(f"Sent message to {self.host}:{self.port}")
+
+        except Exception as e:
+            rospy.logerr(f"Failed to send data: {e}")
+
 
     def rebuild_data(self, data):
         """ Function to rebuild the data received from the server """
@@ -311,8 +358,10 @@ class Panda_Custom_Controller():
         return matrix, frame
 
 
-
 if __name__ == "__main__":
-
-    panda_custom_controller = Panda_Custom_Controller()
+    try:
+        controller = Panda_Custom_Controller()
+        controller.run()
+    except rospy.ROSInterruptException:
+        pass
 
