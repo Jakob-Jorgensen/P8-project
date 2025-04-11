@@ -1,3 +1,6 @@
 [submodule "gg-CNN/ggcnn"]
 	path = gg-CNN/ggcnn
 	url = https://github.com/dougsm/ggcnn
+[submodule "ROS2_MAX/src/gg-CNN/ggcnn"]
+	path = ROS2_MAX/src/gg-CNN/ggcnn
+	url = https://github.com/dougsm/ggcnn
