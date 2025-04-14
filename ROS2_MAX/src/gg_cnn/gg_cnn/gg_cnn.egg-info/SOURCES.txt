@@ -1,0 +1,11 @@
+package.xml
+setup.cfg
+setup.py
+gg_cnn/gg_cnn.egg-info/PKG-INFO
+gg_cnn/gg_cnn.egg-info/SOURCES.txt
+gg_cnn/gg_cnn.egg-info/dependency_links.txt
+gg_cnn/gg_cnn.egg-info/entry_points.txt
+gg_cnn/gg_cnn.egg-info/requires.txt
+gg_cnn/gg_cnn.egg-info/top_level.txt
+gg_cnn/gg_cnn.egg-info/zip-safe
+resource/gg_cnn

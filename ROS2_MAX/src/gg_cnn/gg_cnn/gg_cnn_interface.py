@@ -19,8 +19,8 @@ Then our model should sit and wait for an input.
     Lets bind the input to the function call 
 
 Then it procsses that image, output in a topic and then wait for another image 
+"""
 
-""" 
 #ROS2 
 import rclpy
 from rclpy.node import Node
@@ -36,25 +36,22 @@ from skimage.filters import gaussian
 from ggcnn.models.ggcnn import GGCNN
 from ggcnn.models.ggcnn2 import GGCNN2
 
-
 # Device configuration  
 GRASP_WIDTH_MAX = 200.0  # Maximum grasp width for visualization 
 
 ### CHOSE THE MODEL TO USE ###
 MODEL_CHOSE = 'ggcnn' # 'GGCNN' or 'GGCNN2'  # Choose the model to use
-
+home_path = '/home/max/Documents/P8-project/ROS2_MAX/src/gg_cnn/gg_cnn/'
 if MODEL_CHOSE == 'ggcnn': 
-    MODEL_PATH = 'pretraind-models/pretraind_ggccn.pt' # The GGCNN is trained on the cornell dataset 
+    MODEL_PATH =  home_path+'pretraind-models/pretraind_ggccn.pt' # The GGCNN is trained on the cornell dataset 
     NETWORK = GGCNN()
 
 elif MODEL_CHOSE == 'ggcnn2':  
-    MODEL_PATH = 'pretraind-models/pretraind_ggcnn2.pth' # The GGCNN2 is trained on the jacquard dataset 
+    MODEL_PATH = home_path +'pretraind-models/pretraind_ggccn2.pth' # The GGCNN2 is trained on the jacquard dataset 
     NETWORK = GGCNN2()
 else: 
     raise ValueError('Please choose a valid model')
 #### END OF MODEL CHOICE ####
-
-
 
 def input_img(img, out_size=300):
     """
@@ -131,7 +128,6 @@ def get_pred(net, xc):
         pred_wid = torch.sigmoid(pred_wid)
 
     return pred_pos, pred_cos, pred_sin, pred_wid
-
 
 def post_process_output(quality_map, cos_map, sin_map, width_map):
     """
@@ -226,13 +222,11 @@ def depth2Gray3(im_depth):
     ret = np.expand_dims(ret, 2).repeat(3, axis=2)
     return ret
 
-# Load GGCNN neural network model
-
-
 # ROS 2 Node Implementation
 class GGCNNNode(Node):
     def __init__(self):
-        super().__init__('gg_cnn_image_processing')
+        super().__init__('gg_cnn_image_processing') 
+        # Load GGCNN neural network model
         self.model_loader = GGCNNNet(MODEL_PATH)
 
         # Create subscription to depth image topic
@@ -247,7 +241,7 @@ class GGCNNNode(Node):
         self.publisher_ = self.create_publisher(Float32MultiArray, '/grasp_positions', 10)
         self.bridge = CvBridge()
 
-    def gg_cnn_callback(self, msg):
+    def gg_cnn_callback(self, msg):  
         # Convert ROS Image message to OpenCV image
         try:
             depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
@@ -264,7 +258,7 @@ class GGCNNNode(Node):
 
         # Publish the grasp information
         self.publisher_.publish(grasp_msg)
-        self.get_logger().info(f"Published grasp position: {grasp_msg.data}")
+        self.get_logger().info(f"Published grasp position: {grasp_msg.data}")   
 
 def main(args=None):
     rclpy.init(args=args)
@@ -272,4 +266,3 @@ def main(args=None):
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
-

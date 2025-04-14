@@ -1,18 +1,17 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>gg_CNN</name>
-  <version>0.0.1</version>
-  <description>GG_CNN node for grasp detection with RealSense depth images</description>
-
+  <name>gg_cnn</name>
+  <version>0.0.0</version>
+  <description>TODO: Package description</description>
   <maintainer email="70377798+Jakob-Jorgensen@users.noreply.github.com">max</maintainer>
-  <license>Apache 2.0</license>
+  <license>TODO: License declaration</license>
 
   <!-- ROS 2 dependencies -->
   <depend>rclpy</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
-  <depend>cv_bridge</depend>
+  <depend>cv_bridge</depend> 
 
   <!-- Python dependencies -->
   <exec_depend>torch</exec_depend>

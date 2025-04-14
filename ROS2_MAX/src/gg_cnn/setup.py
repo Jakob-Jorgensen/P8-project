@@ -1,11 +1,13 @@
 from setuptools import find_packages, setup
 
-package_name = 'gg_CNN'
+package_name = 'gg_cnn'
 
 setup(
     name=package_name,
-    version='0.0.1',  # Updated version
-    packages=find_packages(exclude=['test']),  # Automatically find and include packages, excluding 'test' folder
+    version='0.0.1',  # Updated version 
+    packages=find_packages(where='gg_cnn'),  # Automatically find packages in the src directory
+    package_dir={'': 'gg_cnn'},  # Tells setuptools that packages are inside the src directory
+    #packages=find_packages(exclude=['test']),  # Automatically find and include packages, excluding 'test' folder
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
@@ -22,11 +24,11 @@ setup(
     maintainer='max',  # Your name or organization
     maintainer_email='70377798+Jakob-Jorgensen@users.noreply.github.com',  # Your email
     description='GG_CNN for Grasp Detection with RealSense Camera in ROS 2',  # Package description
-    license='Apache 2.0',  # License for the package
+    license='todo',  # License for the package
     tests_require=['pytest'],  # Testing framework
     entry_points={
         'console_scripts': [
-            'gg_cnn_image_processing = gg_CNN.gg_cnn_interface:main',  # Updated entry point to match your script
+            'gg_cnn_image_processing = gg_cnn.gg_cnn_interface:main',  # Updated entry point to match your script
         ],
     },
 )
