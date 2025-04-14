@@ -29,7 +29,7 @@ class Panda_Custom_Controller():
         rospy.logwarn("Hello world!")
         rospy.logerr("Hello world!")
 
-        self.host = 'localhost'
+        self.host = '100.114.98.19'
         self.port = 20001
 
         # Create a UDP socket
