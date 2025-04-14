@@ -5,9 +5,9 @@ package_name = 'gg_cnn'
 setup(
     name=package_name,
     version='0.0.1',  # Updated version 
-    packages=find_packages(where='gg_cnn'),  # Automatically find packages in the src directory
-    package_dir={'': 'gg_cnn'},  # Tells setuptools that packages are inside the src directory
-    #packages=find_packages(exclude=['test']),  # Automatically find and include packages, excluding 'test' folder
+    packages=find_packages(where='gg_cnn',exclude=['test']),  # Automatically find packages in the src directory
+    package_dir={'gg_cnn'},  # Tells setuptools that packages are inside the src directory
+    
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),

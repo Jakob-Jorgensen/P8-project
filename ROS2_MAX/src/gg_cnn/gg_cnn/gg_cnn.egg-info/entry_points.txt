@@ -1,3 +1,0 @@
-[console_scripts]
-gg_cnn_image_processing = gg_cnn.gg_cnn_interface:main
-
