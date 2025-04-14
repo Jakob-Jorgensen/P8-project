@@ -14,7 +14,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using device: {device}")
 
 # Load the Llava model & processor
-model_id = "llava-hf/llava-onevision-qwen2-0.5b-ov-hf"
+model_id = "llava-hf/llava-onevision-qwen2-7b-ov-hf"
 model = LlavaOnevisionForConditionalGeneration.from_pretrained(
     model_id, torch_dtype=torch.float16, low_cpu_mem_usage=True
 ).to(device)

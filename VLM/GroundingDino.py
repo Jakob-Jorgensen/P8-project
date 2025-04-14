@@ -11,12 +11,12 @@ device = "cuda"
 processor = AutoProcessor.from_pretrained(model_id)
 model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id).to(device)
 
-image_path = "./color_0946.png"
+image_path = "./color_0833.png"
 image = Image.open(image_path)
 image = image.convert("RGB")
 #image = image.resize((512,512))
 # Check for cats and remote controls
-text_labels = [["yellow box"]]
+text_labels = [["Please grab the black square the furthest away"]]
 
 inputs = processor(images=image, text=text_labels, return_tensors="pt").to(device)
 with torch.no_grad():
@@ -25,8 +25,8 @@ with torch.no_grad():
 results = processor.post_process_grounded_object_detection(
     outputs,
     inputs.input_ids,
-    box_threshold=0.3,
-    text_threshold=0.3,
+    box_threshold=0.25,
+    text_threshold=0.4,
     target_sizes=[image.size[::-1]]
 )
 

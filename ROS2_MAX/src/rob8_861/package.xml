@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>rob8_861</name>
+  <version>0.0.0</version>
+  <description>Package for rob8_861 robot with TCP server and custom messages.</description>
+
+  <maintainer email="70377798+Jakob-Jorgensen@users.noreply.github.com">max</maintainer>
+  <license>Apache-2.0</license>
+
+  <!-- Build dependencies -->
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <build_depend>rosidl_default_generators</build_depend>
+  <build_depend>std_msgs</build_depend>
+  <build_depend>rob8_interfaces</build_depend>
+
+  <!-- Execution dependencies -->
+  <exec_depend>ament_python</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>rosidl_default_runtime</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>rob8_interfaces</exec_depend>
+
+  <!-- Testing -->
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
+
