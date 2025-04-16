@@ -12,18 +12,18 @@ import json
 import re
 
 # Log in with your Hugging Face token
-login("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")
+
 
 model_id= "Qwen/Qwen2.5-7B-Instruct"
-hf_token = "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"
+
 
 # Load the tokenizer and model
-tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True, token=hf_token)
+tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
 model = AutoModelForCausalLM.from_pretrained(
     model_id,
     device_map="auto",
     torch_dtype=torch.float16,
-    token=hf_token
+
 )
 
 # Set up the promt template
