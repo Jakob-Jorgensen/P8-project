@@ -4,13 +4,12 @@ package_name = 'gg_cnn'
 
 setup(
     name=package_name,
-    version='0.0.1',  # Updated version 
-    packages=find_packages(where='gg_cnn',exclude=['test']),  # Automatically find packages in the src directory
-    package_dir={'gg_cnn'},  # Tells setuptools that packages are inside the src directory
-    
+    version='0.0.1',  # Updated version
+    packages=find_packages(where='gg_cnn/gg_cnn', exclude=['test']),  # Automatically find packages in the gg_cnn/gg_cnn directory
+    package_dir={'src': 'gg_cnn'},  # Correctly point to the inner gg_cnn directory for Python files
     data_files=[
         ('share/ament_index/resource_index/packages',
-            ['resource/' + package_name]),
+         ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
     ],
     install_requires=[

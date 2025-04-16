@@ -41,13 +41,25 @@ GRASP_WIDTH_MAX = 200.0  # Maximum grasp width for visualization
 
 ### CHOSE THE MODEL TO USE ###
 MODEL_CHOSE = 'ggcnn' # 'GGCNN' or 'GGCNN2'  # Choose the model to use
-home_path = '/home/max/Documents/P8-project/ROS2_MAX/src/gg_cnn/gg_cnn/'
+HOME_PATH = '/home/max/Documents/P8-project/ROS2_MAX/src/gg_cnn/gg_cnn/' 
+
+### Camera Calibration ### 
+INTRINSIC_MATRIX = np.array([[1.34772092e+03, 0.00000000e+00, 9.62833091e+02],
+ [0.00000000e+00, 1.34663271e+03, 5.45299335e+02],
+ [0.00000000e+00, 0.00000000e+00, 1.00000000e+00]])
+
+ROBOT_TO_CAM_EXTRNSIC = np.array([[ 0.79110791,  0.22299801,  0.56957893, -0.1363679 ],
+ [ 0.13523332,  0.84436975, -0.51841265,  0.14765188],
+ [-0.59654021,  0.4871464,   0.63783083,  0.58239576],
+ [ 0. ,        0. ,         0. ,         1.        ]])
+
+
 if MODEL_CHOSE == 'ggcnn': 
-    MODEL_PATH =  home_path+'pretraind-models/pretraind_ggccn.pt' # The GGCNN is trained on the cornell dataset 
+    MODEL_PATH =  HOME_PATH+'pretraind-models/pretraind_ggccn.pt' # The GGCNN is trained on the cornell dataset 
     NETWORK = GGCNN()
 
 elif MODEL_CHOSE == 'ggcnn2':  
-    MODEL_PATH = home_path +'pretraind-models/pretraind_ggccn2.pth' # The GGCNN2 is trained on the jacquard dataset 
+    MODEL_PATH = HOME_PATH +'pretraind-models/pretraind_ggccn2.pth' # The GGCNN2 is trained on the jacquard dataset 
     NETWORK = GGCNN2()
 else: 
     raise ValueError('Please choose a valid model')
@@ -251,17 +263,41 @@ class GGCNNNode(Node):
 
         # Process the image using the GG-CNN model
         row, col, grasp_angle, grasp_width_pixels = self.model_loader.predict(depth_image)
+        
+        z_pix = depth_image[col,row]
+        x_pix = (col - INTRINSIC_MATRIX[0, 2]) * z / INTRINSIC_MATRIX[0, 0]
+        y_pix = (row - INTRINSIC_MATRIX[1, 2]) * z / INTRINSIC_MATRIX[1, 1]
+        pix_coord = np.array([x_pix,y_pix,z_pix])
+        # In camera frame, assume Z points forward, X right, Y down
+        x_axis = np.array([np.cos(grasp_angle_rad), np.sin(grasp_angle_rad), 0])
+        z_axis = np.array([0, 0, 1])  # approach direction
+        y_axis = np.cross(z_axis, x_axis)
+        
+        # Re-orthogonalize (in case of rounding)
+        x_axis = np.cross(y_axis, z_axis)
+        
+        R = np.stack([x_axis, y_axis, z_axis], axis=1)  # 3x3 rotation matrix
+        
+        T = np.eye(4) 
+        T[:3,:3] = R  # Rotation matrix 
+        T[:3, 3] = pix_coord # camrea coordiates
+        
+        transform_came_to_robot_matrix = np.dot(ROBOT_TO_CAM_EXTRNSIC,T)
+        
+        print(transform_came_to_robot_matrix) 
+        
 
         # Prepare the output message with the grasp position (row, col), angle, and width
         grasp_msg = Float32MultiArray()
         grasp_msg.data = [row, col, grasp_angle, grasp_width_pixels]
-
+        
         # Publish the grasp information
         self.publisher_.publish(grasp_msg)
-        self.get_logger().info(f"Published grasp position: {grasp_msg.data}")   
+        self.get_logger().info(f"Published grasp position: {grasp_msg.data}")    
+  
 
 def main(args=None):
-    rclpy.init(args=args)
+    rclpy.init(args=args) 
     node = GGCNNNode()
     rclpy.spin(node)
     node.destroy_node()
