@@ -1,12 +1,13 @@
+# ROS2 Imports
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, String
 from std_msgs.msg import Float32MultiArray
 from cv_bridge import CvBridge 
-# llm imports
-from transformers import AutoTokenizer, AutoModelForCausalLM
+
+# VLM Imports
+from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
 import torch
-from huggingface_hub
 import json
 import re
 
@@ -16,33 +17,52 @@ device = "cuda"
 processor = AutoProcessor.from_pretrained(model_id)
 model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id).to(device)
 
-def msg_to_json(msg): #TODO Write this function
-    continue
+# Function to create the image mask ggcnn needs
+def ggcnn_mask_creator():
+    return
 
-class VLM_NODE(Node)
+# Function to handle the JSON message
+def json_process():
+    return
+
+class VLM_NODE(Node):
     def __init__(self):
         super().__init__('vlm_interface')
+        self.cv_image = None
 
-        # Create subscription to depth image topic
+        # Create subscription to image topic
         self.subscription = self.create_subscription(
             Image,
             '/segmented_depth_img', #FIXME change to correct topic
+            self.save_image,
+            10
+        )
+        
+        self.subscription = self.create_subscription(
+            String,
+            '/llm_output',
             self.vlm_callback,
             10
         )
 
         # Publisher to output grasping information
-        self.publisher_ = self.create_publisher(Float32MultiArray, '/object_mask', 10)
+        self.publisher_ = self.create_publisher(Image, '/object_mask', 10)
         self.bridge = CvBridge()
 
-    def vlm_callback(self, msg):
+    def save_image(self, msg):
         # Convert ROS Image message to OpenCV image
-        cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
+        self.cv_image = self.bridge.imgmsg_to_cv2(msg, 
+                                                  desired_encoding='passthrough')
 
-        text_label = json_process(msg)
+    def vlm_callback(self, msg):
+        # If no image has been captured yet, return while doing nothing
+        if self.cv_image == None: return
+
+        text_input = json_process(msg) #TODO write json_process function
 
         # Process the image with the VLM model
-        inputs = processor(images=cv_image, text=text_labels, return_tensors="pt").to(device)
+        inputs = processor(images=self.cv_image, text=text_input,
+                            return_tensors="pt").to(device)
         with torch.no_grad():
             outputs = model(**inputs)
 
@@ -51,8 +71,11 @@ class VLM_NODE(Node)
             inputs.input_ids,
             box_threshold=0.4,
             text_threshold=0.3,
-            target_sizes=[cv_image.size[::-1]]
+            target_sizes=[self.cv_image.size[::-1]]
         )
+
+        #TODO write mask creation function
+        mask = ggcnn_mask_creator()
 
         # Publish the results
         self.publisher_.publish(results)

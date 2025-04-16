@@ -1,13 +1,12 @@
 # ROS2 
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, String
 from std_msgs.msg import Float32MultiArray
 from cv_bridge import CvBridge 
 # llm imports
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
-from huggingface_hub
 import json
 import re
 
@@ -53,7 +52,7 @@ Now process this command:
 """
 
 # Parsing function
-def parse_model_output(raw_output: str)
+def parse_model_output(raw_output: str):
     lines = [line.strip() for line in raw_output.strip().splitlines() if line.strip()]
     structured_objects = []
     i = 0
@@ -104,14 +103,14 @@ class LLM_Node(Node):
         super().__init__('llm_interface') 
         # Create subscription to command topic
         self.subscription = self.create_subscription(
-            Image,
+            String,
             '/voice_command',
             self.process_command,
             10
         )
         
         # Publisher to output llm output
-        self.publisher_ = self.create_publisher(Float32MultiArray, '/llm_output', 10)
+        self.publisher_ = self.create_publisher(String, '/llm_output', 10)
         self.bridge = CvBridge()
     
     def process_command(self, msg):
