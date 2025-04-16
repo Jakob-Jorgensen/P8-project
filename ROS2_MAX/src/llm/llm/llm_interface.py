@@ -11,11 +11,7 @@ from huggingface_hub
 import json
 import re
 
-# Log in with your Hugging Face token
-
-
 model_id= "Qwen/Qwen2.5-7B-Instruct"
-
 
 # Load the tokenizer and model
 tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
@@ -23,7 +19,6 @@ model = AutoModelForCausalLM.from_pretrained(
     model_id,
     device_map="auto",
     torch_dtype=torch.float16,
-
 )
 
 # Set up the promt template
@@ -102,7 +97,6 @@ def parse_model_output(raw_output: str)
     return deduplicated_objects
 
 print("Model is ready. Type you command (or 'exit' to quit):")
-
 
 # Main function
 class LLM_Node(Node):

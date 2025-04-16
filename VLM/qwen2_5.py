@@ -4,11 +4,7 @@ from huggingface_hub import login
 import json
 import re
 
-# Log in with your Hugging Face token
-
-
 model_id = "Qwen/Qwen2.5-7B-Instruct"
-
 
 # Load tokenizer and model
 tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
@@ -16,7 +12,6 @@ model = AutoModelForCausalLM.from_pretrained(
     model_id,
     device_map="auto",
     torch_dtype=torch.float16,
-
 )
 
 # Prompt template
