@@ -37,10 +37,11 @@ class UDPServerNode(Node):
             self.udp_receive()
             init_state += 1
 
-        time.sleep(5)
+        time.sleep(10)
 
         a_command = Command()
         a_command.htm = [1.0, 0.0, 0.0, 100.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+        a_command.gripper_distance = [0.0]
         a_command.frame = "world"
 
         self.get_logger().info(f"a_command: {a_command}")
@@ -64,16 +65,19 @@ class UDPServerNode(Node):
                                                      [ msg.htm[8],  msg.htm[9],  msg.htm[10],  msg.htm[11] ],
                                                      [ msg.htm[12], msg.htm[13], msg.htm[14],  msg.htm[15] ]])
     
+        gripper_distance = np.array(msg.gripper_distance)
         frame = msg.frame
 
         # Convert the 4x4 matrix to a flat list and pack it as binary data
         matrix_data = homogenous_transformation_matrix.flatten().astype(np.float32).tobytes()
     
+        gripper_distance_data = gripper_distance.flatten().astype(np.float32).tobytes()
+
         # Convert the string frame to bytes (null-terminated)
         frame_data = frame.encode('utf-8') + b'\0'
     
         # Send the command message to the UDP server
-        self.udp_send(matrix_data + frame_data)  # Send the string representation of msg (or adjust as needed)
+        self.udp_send(matrix_data + gripper_distance_data + frame_data)  # Send the string representation of msg (or adjust as needed)
 
 
     def udp_send(self, message: str):
