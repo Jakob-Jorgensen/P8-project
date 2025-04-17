@@ -1,18 +1,17 @@
-# ROS2 
+# ROS2 Imports
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image, String
-from std_msgs.msg import Float32MultiArray
-from cv_bridge import CvBridge 
-# llm imports
+from std_msgs.msg import String, List
+
+# LLM Imports
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 import json
 import re
 
-model_id= "Qwen/Qwen2.5-7B-Instruct"
+model_id = "Qwen/Qwen2.5-7B-Instruct"
 
-# Load the tokenizer and model
+# Load tokenizer and model
 tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
 model = AutoModelForCausalLM.from_pretrained(
     model_id,
@@ -20,7 +19,7 @@ model = AutoModelForCausalLM.from_pretrained(
     torch_dtype=torch.float16,
 )
 
-# Set up the promt template
+# Prompt template
 template = """You are an information extraction engine that parses natural language commands into structured object descriptions.
 
 Given a command, extract only the described objects and interpret their position, distance, and size.
@@ -51,6 +50,43 @@ Now process this command:
 "{user_input}"
 """
 
+# ROS 2 publisher class
+class ObjectInfoPublisher(Node):
+    def __init__(self):
+        super().__init__('object_info_publisher')
+
+        self.object_pub = self.create_publisher(String, 'object', 10)
+        self.description_pub = self.create_publisher(String, 'description', 10)
+        self.side_pub = self.create_publisher(String, 'side', 10)
+        self.distance_pub = self.create_publisher(String, 'distance', 10)
+        self.size_pub = self.create_publisher(String, 'size', 10)
+
+    def publish_info(self, data_list):
+        for item in data_list:
+            object_msg = String()
+            object_msg.data = item["object"]
+            self.object_pub.publish(object_msg)
+
+            desc_msg = String()
+            desc_msg.data = item["description"]
+            self.description_pub.publish(desc_msg)
+
+            side_msg = String()
+            side_msg.data = item["side"]
+            self.side_pub.publish(side_msg)
+
+            distance_msg = String()
+            distance_msg.data = item["distance"]
+            self.distance_pub.publish(distance_msg)
+
+            size_msg = String()
+            size_msg.data = item["size"]
+            self.size_pub.publish(size_msg)
+
+            self.get_logger().info(f"Published object: {item['object']}, Side: {item['side']}, Distance: {item['distance']}, Size: {item['size']}")
+            return
+
+
 # Parsing function
 def parse_model_output(raw_output: str):
     lines = [line.strip() for line in raw_output.strip().splitlines() if line.strip()]
@@ -58,13 +94,11 @@ def parse_model_output(raw_output: str):
     i = 0
 
     while i < len(lines):
-        # Match: object description (ignoring anything that doesn't look like it)
         match = re.match(r"([a-zA-Z]+)\s(.+)", lines[i])
         if match:
             obj_name, description = match.groups()
             side, distance, size = "unspecified", "unspecified", "unspecified"
 
-            # Read next 3 lines if available
             for j in range(i + 1, min(i + 4, len(lines))):
                 if lines[j].startswith("Side:"):
                     side = lines[j].split(":", 1)[1].strip()
@@ -82,9 +116,8 @@ def parse_model_output(raw_output: str):
             })
             i += 4
         else:
-            i += 1  # Skip over irrelevant lines
+            i += 1
 
-    # Deduplication: Remove duplicate objects based on object name and description
     seen = set()
     deduplicated_objects = []
     for obj in structured_objects:
@@ -95,64 +128,54 @@ def parse_model_output(raw_output: str):
 
     return deduplicated_objects
 
-print("Model is ready. Type you command (or 'exit' to quit):")
 
-# Main function
-class LLM_Node(Node):
-    def __init__(self):
-        super().__init__('llm_interface') 
-        # Create subscription to command topic
-        self.subscription = self.create_subscription(
-            String,
-            '/voice_command',
-            self.process_command,
-            10
-        )
-        
-        # Publisher to output llm output
-        self.publisher_ = self.create_publisher(String, '/llm_output', 10)
-        self.bridge = CvBridge()
-    
-    def process_command(self, msg):
-        full_prompt = template.format(user_input=msg.data.decode('utf-8'))
-        inputs = tokenizer(full_prompt, return_tensors="pt").to(model.device)
+# Main interactive loop
+def main():
+    rclpy.init()
+    publisher_node = ObjectInfoPublisher()
 
-        print("Generating response...")
-        output = model.generate(**inputs, max_new_tokens=100, do_sample=False, eos_token_id=tokenizer.eos_token_id)
-        response = tokenizer.decode(output[0], skip_special_tokens=True)
+    print("Model is ready. Type your command (or 'exit' to quit):")
 
-        # Trim to structured output only
-        split_marker = "Now process this command:"
-        if split_marker in response:
-            response = response.split(split_marker, 1)[-1].strip()
+    try:
+        while True:
+            user_input = input("Command: ")
+            if user_input.lower() in ["exit", "quit"]:
+                print("Exiting.")
+                break
 
-        # Remove any lines with meta data, processing times, or extra commentary
-        lines = response.splitlines()
-        filtered_lines = []
-        for line in lines:
-            if "seconds to process" not in line and not line.startswith("Human:"):
-                filtered_lines.append(line.strip())
+            full_prompt = template.format(user_input=user_input)
+            inputs = tokenizer(full_prompt, return_tensors="pt").to(model.device)
 
-        # Join the filtered lines back into a response
-        filtered_response = "\n".join(filtered_lines).strip()
+            print("Generating response...")
+            output = model.generate(**inputs, max_new_tokens=100, do_sample=False, eos_token_id=tokenizer.eos_token_id)
+            response = tokenizer.decode(output[0], skip_special_tokens=True)
 
-        # Proceed with the cleaned response
-        structured = parse_model_output(filtered_response)
+            # Trim to structured output only
+            split_marker = "Now process this command:"
+            if split_marker in response:
+                response = response.split(split_marker, 1)[-1].strip()
 
-        # Print the structured JSON
-        if structured:
-            print("\nParsed JSON:\n" + "-"*30)
-            print(json.dumps(structured, indent=2))
-            print("-"*30)
-        else:
-            print("No structured information extracted.")
+            lines = response.splitlines()
+            filtered_lines = [line.strip() for line in lines if "seconds to process" not in line and not line.startswith("Human:")]
+            filtered_response = "\n".join(filtered_lines).strip()
 
+            structured = parse_model_output(filtered_response)
 
+            if structured:
+                print("\nParsed JSON:\n" + "-"*30)
+                print(json.dumps(structured, indent=2))
+                print("-"*30)
 
-# Main loop
-def main(args=None):
-    rclpy.init(args=args)
-    node = LLM_Node()
-    rclpy.spin(node)
-    node.destroy_node()
+                publisher_node.publish_info(structured)
+            else:
+                print("No structured information extracted.")
+
+    except KeyboardInterrupt:
+        pass
+
+    publisher_node.destroy_node()
     rclpy.shutdown()
+
+if __name__ == "__main__":
+    main()
+
