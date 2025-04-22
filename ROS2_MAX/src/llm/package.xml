@@ -8,16 +8,13 @@
   <license>TODO: License declaration</license>
 
   <!-- ROS 2 dependencies -->
-  <depend>rclpy</depend>
-  <depend>sensor_msgs</depend>
-  <depend>std_msgs</depend>
-  <depend>cv_bridge</depend> 
+  <depend>rclpy</depend>  
 
   <!-- Python dependencies -->
   <exec_depend>torch</exec_depend>
-  <exec_depend>numpy</exec_depend>
-  <exec_depend>scikit-image</exec_depend>
-  <exec_depend>opencv-python</exec_depend>
+  <exec_depend>json</exec_depend>  
+  <exec_depend>re</exec_depend>
+  <exec_depend>rob8_interfaces</exec_depend>
 
   <!-- Test dependencies -->
   <test_depend>ament_copyright</test_depend>

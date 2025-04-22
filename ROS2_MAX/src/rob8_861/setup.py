@@ -17,7 +17,7 @@ setup(
     maintainer_email='70377798+Jakob-Jorgensen@users.noreply.github.com',
     description='TODO: Package description',
     license='Apache-2.0',
-    tests_require=['pytest'],
+    #tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'tcp_server = rob8_861.tcp_server:main'

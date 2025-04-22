@@ -4,121 +4,95 @@
 # mask which is then published to the /ggcnn_mask topic. 
 # This node does NOT provide an image to ggcnn with the objects visible
 # it only provides a mask which can be used to generate such image 
-#
-
-# ROS2 Imports
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image, String
-from std_msgs.msg import Float32MultiArray
-from cv_bridge import CvBridge 
+from sensor_msgs.msg import Image
+from rob8_interfaces.msg import LlmCommands
+from cv_bridge import CvBridge
 
-# VLM Imports
 from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
 import torch
-import json
-import re
+import numpy as np
 
-model_id= "IDEA-Research/grounding-dino-base"
-device = "cuda"
+MODEL_ID = "IDEA-Research/grounding-dino-base"
 
-processor = AutoProcessor.from_pretrained(model_id)
-model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id).to(device)
-
-# Function to create the image mask ggcnn needs
-def ggcnn_mask_creator(bbox: list, image):
-    # Image dimensions
-    h = image.shape[0]
-    w = image.shape[1]
-
-    mask = image.copy()
-    for y in range(0, h):
-        for x in range(0, w):
-            if y < bbox[0] or y > bbox[2]:
-                if x < bbox[1] or x > bbox[3]:
-                    mask[y, x] = 0
-            if y > bbox[0] and y < bbox[2]:
-                if x > bbox[1] and x < bbox[3]:
-                    mask[y, x] = 255
-
-    return mask
-
-class VLM_NODE(Node):
+class VLMNode(Node):
     def __init__(self):
         super().__init__('vlm_interface')
+        self.get_logger().info("VLM node starting up…")
+
+        # Load model & processor
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.processor = AutoProcessor.from_pretrained(MODEL_ID)
+        self.model = AutoModelForZeroShotObjectDetection.from_pretrained(MODEL_ID).to(self.device)
+
+        # State
         self.cv_image = None
-        self.LLM_output = ["", "", "", "", ""]
-
-
-        # Create subscription to image topic
-        self.subscription = self.create_subscription(
-            Image,
-            '/segmented_depth_img', #FIXME change to correct topic
-            self.save_image,
-            10
-        ) 
-
-        # Subscriber for output from LLM
-        self.subscription = self.create_subscription(
-            String, '/object', self.save_object, 10
-        )
-        self.subscription = self.create_subscription(
-            String, '/description', self.save_desc, 10
-        )
-        self.subscription = self.create_subscription(
-            String, '/side', self.save_side, 10
-        )
-        self.subscription = self.create_subscription(
-            String, '/distance', self.save_distance, 10
-        )
-        self.subscription = self.create_subscription(
-            String, '/size', self.save_size, 10
-        )
-
-        # Publisher to output grasping information
-        self.publisher_ = self.create_publisher(Image, '/ggcnn_mask', 10)
         self.bridge = CvBridge()
 
-    def save_image(self, msg):
-        # Convert ROS Image message to OpenCV image
-        self.cv_image = self.bridge.imgmsg_to_cv2(msg, 
-                                                  desired_encoding='passthrough')
-        
-    #Save outputs from LLM node
-    def save_object(self, msg): self.LLM_output[0] = msg
-    def save_desc(self, msg): self.LLM_output[1] = msg
-    def save_side(self, msg): self.LLM_output[2] = msg
-    def save_distance(self, msg): self.LLM_output[3] = msg
-    def save_size(self, msg): self.LLM_output[4] = msg
+        # Subscribers
+        self.image_sub = self.create_subscription(
+            Image, '/camera/camera/color/image_raw',
+            self.save_image, 10)
+        self.llm_sub = self.create_subscription(
+            LlmCommands, '/LLM_output',
+            self.vlm_callback, 10)
 
-    def vlm_callback(self, msg):
-        # If no image has been captured yet, return while doing nothing
-        if self.cv_image == None: return
+        # Publisher
+        self.mask_pub = self.create_publisher(Image, '/ggcnn_mask', 10) 
+        self.get_logger().info(">>  VLM Node Ready  <<.")
 
-        # Process the image with the VLM model using description from LLM
-        inputs = processor(images=self.cv_image, text=self.LLM_output[1],
-                            return_tensors="pt").to(device)
+    def save_image(self, msg: Image):
+        # Convert to OpenCV BGR8 (or whatever your color topic uses)
+        self.cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+
+    def vlm_callback(self, msg: LlmCommands):
+        if self.cv_image is None:
+            self.get_logger().warn("No image yet, skipping detection.")
+            return
+
+        # Forward VLM
+        inputs = self.processor(
+            images=self.cv_image,
+            text=msg.object,
+            return_tensors="pt"
+        ).to(self.device)
+
         with torch.no_grad():
-            outputs = model(**inputs)
+            outputs = self.model(**inputs)
 
-        results = processor.post_process_grounded_object_detection(
-            outputs,
-            inputs.input_ids,
-            box_threshold=0.4,
-            text_threshold=0.3,
-            target_sizes=[self.cv_image.size[::-1]]
+        # Must pass the correct target size: (height, width)
+        h, w = self.cv_image.shape[:2]
+        results = self.processor.post_process_grounded_object_detection(
+            outputs, inputs.input_ids,
+            box_threshold=0.4, text_threshold=0.3,
+            target_sizes=[(h, w)]
         )
+        
+        # results is a list (one per image); we only have one:
+        det = results[0]
+        if det["boxes"].numel() == 0:
+            self.get_logger().info("No objects found above threshold.")
+            return
 
-        # Convert the list into a mask for gg-cnn
-        mask = ggcnn_mask_creator(results, self.cv_image)
+        # Pick the highest‑score box (or iterate if you want all)
+        scores = det["scores"]
+        best_idx = torch.argmax(scores).item()
+        x0, y0, x1, y1 = det["boxes"][best_idx].int().tolist()
 
-        # Publish the results
-        self.publisher_.publish(mask)
+        # Create a binary mask: 255 inside box, 0 outside
+        mask = np.zeros((h, w), dtype=np.uint8)
+        mask[y0:y1, x0:x1] = 255
 
+        # Convert back to ROS Image and publish
+        mask_msg = self.bridge.cv2_to_imgmsg(mask, encoding='mono8')
+        mask_msg.header.stamp = self.get_clock().now().to_msg()
+        self.mask_pub.publish(mask_msg)
+        self.get_logger().info(f"Published mask for box {(x0,y0,x1,y1)}")
 
 def main(args=None):
     rclpy.init(args=args)
-    node = VLM_NODE()
+    node = VLMNode()
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()

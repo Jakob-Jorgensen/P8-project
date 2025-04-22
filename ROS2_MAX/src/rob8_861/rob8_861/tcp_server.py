@@ -32,7 +32,7 @@ class UDPServerNode(Node):
             self.get_logger().error(f"Failed to connect UDP: {e}")
 
         init_state = 0
-        while init_state < 2:
+        while init_state < 3:
             self.get_logger().info(f"init_state: {init_state}")
             self.udp_receive()
             init_state += 1
@@ -41,7 +41,7 @@ class UDPServerNode(Node):
 
         a_command = Command()
         a_command.htm = [1.0, 0.0, 0.0, 100.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
-        a_command.gripper_distance = [0.0]
+        a_command.gripper_distance = [1.0]
         a_command.frame = "world"
 
         self.get_logger().info(f"a_command: {a_command}")
@@ -144,4 +144,3 @@ def main(args=None):
 
 if __name__ == "__main__":
     main()
-

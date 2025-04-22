@@ -9,8 +9,13 @@ find_package(ament_lint_auto)
 
 # Generate message files
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/Command.msg"
+  "msg/Command.msg" 
+  "msg/LlmCommands.msg"
   DEPENDENCIES builtin_interfaces
+)
+
+install(DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}/
 )
 
 ament_export_dependencies(rosidl_default_runtime)

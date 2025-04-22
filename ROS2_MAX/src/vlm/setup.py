@@ -5,8 +5,8 @@ package_name = 'vlm'
 setup(
     name=package_name,
     version='0.0.1',  # Updated version
-    packages=find_packages(where='vlm/vlm', exclude=['test']),  # Automatically find packages in the gg_cnn/gg_cnn directory
-    package_dir={'src': 'vlm'},  # Correctly point to the inner gg_cnn directory for Python files
+    packages=find_packages(),  # Automatically find packages in the gg_cnn/gg_cnn directory
+    #package_dir={'src': 'vlm'},  # Correctly point to the inner gg_cnn directory for Python files
     data_files=[
         ('share/ament_index/resource_index/packages',
          ['resource/' + package_name]),
@@ -24,7 +24,6 @@ setup(
     maintainer_email='70377798+Jakob-Jorgensen@users.noreply.github.com',  # Your email
     description='VLM package for P8 project',  # Package description
     license='todo',  # License for the package
-    tests_require=['pytest'],  # Testing framework
     entry_points={
         'console_scripts': [
             'vlm_interface = vlm.vlm_interface:main',  # Updated entry point to match your script

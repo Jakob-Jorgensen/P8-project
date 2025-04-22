@@ -2,8 +2,12 @@ from transformers import T5Tokenizer, T5ForConditionalGeneration
 import torch
 import json
 import re
+from huggingface_hub import login
 
-model_id = "google/t5-3b"
+# Login to Hugging Face if needed
+# login("hf_your_token_here")  # Uncomment and paste your token here if accessing gated models
+
+model_id = "google/flan-t5-xl"
 
 # Load tokenizer and model
 tokenizer = T5Tokenizer.from_pretrained(model_id)
@@ -13,14 +17,26 @@ model = T5ForConditionalGeneration.from_pretrained(
     torch_dtype=torch.float16
 )
 
-# Prompt template (simplified for instruction-style input)
-template = """Extract object descriptions from this command, following the format:
+# Prompt template
+template = """Extract the object descriptions from the command, following the format:
+
+Format:
 <object> <description of the object>
 Side: <left/right/middle/unspecified>
 Distance: <closest/furthest/middle/unspecified>
 Size: <big/small/medium/unspecified>
 
-Command: {user_input}
+Example:
+"Grab the smallest yellow object"
+Output:
+object small yellow object
+Side: unspecified
+Distance: unspecified
+Size: small
+
+Command: "{user_input}"
+
+
 """
 
 def parse_model_output(raw_output: str):
@@ -53,6 +69,7 @@ def parse_model_output(raw_output: str):
         else:
             i += 1
 
+    # Deduplicate
     seen = set()
     deduped = []
     for obj in structured_objects:
@@ -63,8 +80,8 @@ def parse_model_output(raw_output: str):
 
     return deduped
 
-# Main interaction loop
-print("T5-3B is ready. Type your command (or 'exit' to quit):")
+# Main loop
+print("FLAN-T5-XL is ready. Type your command (or 'exit' to quit):")
 
 while True:
     user_input = input("Command: ")
@@ -76,14 +93,15 @@ while True:
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
 
     print("Generating response...")
-    output = model.generate(**inputs, max_new_tokens=150, do_sample=False, eos_token_id=tokenizer.eos_token_id)
+    output = model.generate(**inputs, max_new_tokens=150, do_sample=True, temperature=0.7, eos_token_id=tokenizer.eos_token_id)
+
     response = tokenizer.decode(output[0], skip_special_tokens=True)
 
     structured = parse_model_output(response)
 
     if structured:
-        print("\nParsed JSON:\n" + "-"*30)
+        print("\nParsed JSON:\n" + "-" * 30)
         print(json.dumps(structured, indent=2))
-        print("-"*30)
+        print("-" * 30)
     else:
         print("No structured information extracted.")

@@ -1,7 +1,7 @@
 # ROS2 Imports
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String, List
+from rob8_interfaces.msg import LlmCommands
 
 # LLM Imports
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -54,37 +54,35 @@ Now process this command:
 class ObjectInfoPublisher(Node):
     def __init__(self):
         super().__init__('object_info_publisher')
+        self.publisher = self.create_publisher(LlmCommands, 'LLM_output', 10)
 
-        self.object_pub = self.create_publisher(String, 'object', 10)
-        self.description_pub = self.create_publisher(String, 'description', 10)
-        self.side_pub = self.create_publisher(String, 'side', 10)
-        self.distance_pub = self.create_publisher(String, 'distance', 10)
-        self.size_pub = self.create_publisher(String, 'size', 10)
-
-    def publish_info(self, data_list):
-        for item in data_list:
-            object_msg = String()
-            object_msg.data = item["object"]
-            self.object_pub.publish(object_msg)
-
-            desc_msg = String()
-            desc_msg.data = item["description"]
-            self.description_pub.publish(desc_msg)
-
-            side_msg = String()
-            side_msg.data = item["side"]
-            self.side_pub.publish(side_msg)
-
-            distance_msg = String()
-            distance_msg.data = item["distance"]
-            self.distance_pub.publish(distance_msg)
-
-            size_msg = String()
-            size_msg.data = item["size"]
-            self.size_pub.publish(size_msg)
-
-            self.get_logger().info(f"Published object: {item['object']}, Side: {item['side']}, Distance: {item['distance']}, Size: {item['size']}")
-            return
+    def publish_info(self, data_list): 
+        # Create a LlmCommands message 
+        # and populate it with the structured data 
+        # from the parsed output 
+        objects = [] 
+        descriptions = [] 
+        sides = [] 
+        distances = [] 
+        sizes = [] 
+        for item in data_list: 
+            # Extract the object, description, side, distance, and size from the parsed output
+            objects.append(item["object"]) 
+            descriptions.append(item["description"]) 
+            sides.append(item["side"]) 
+            distances.append(item["distance"])  
+            sizes.append(item["size"])  
+        
+        # Create a LlmCommands message and populate it with the structured data 
+        LLM_model = LlmCommands()
+        LLM_model.object = objects
+        LLM_model.description = descriptions 
+        LLM_model.side = sides
+        LLM_model.distance = distances
+        LLM_model.size = sizes
+        
+        self.publisher.publish(LLM_model)
+        return 
 
 
 # Parsing function

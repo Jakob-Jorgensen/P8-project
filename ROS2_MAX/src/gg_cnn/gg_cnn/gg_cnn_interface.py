@@ -20,12 +20,10 @@ Then our model should sit and wait for an input.
 
 Then it procsses that image, output in a topic and then wait for another image 
 """
-
 #ROS2 
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
-from std_msgs.msg import Float32MultiArray
 from cv_bridge import CvBridge 
 # Code framework
 import cv2
@@ -33,8 +31,10 @@ import numpy as np
 import torch
 import math
 from skimage.filters import gaussian
-from ggcnn.models.ggcnn import GGCNN
-from ggcnn.models.ggcnn2 import GGCNN2
+from gg_cnn.ggcnn_structur import GGCNN 
+from gg_cnn.ggcnn2_structur import GGCNN2 
+from rob8_interfaces.msg import Command
+
 
 # Device configuration  
 GRASP_WIDTH_MAX = 200.0  # Maximum grasp width for visualization 
@@ -98,7 +98,9 @@ class GGCNNNet:
         self.net = NETWORK  # GGCNN2() or  GGCNN()
         self.net.load_state_dict(torch.load(model, map_location=self.device), strict=True)   # True: exact match, False: load only matching key-value parameters, others load default values.
         # self.net = self.net.to(device)
-        print('>> load done')
+        print('>> load done')  
+        
+
 
     def predict(self, img, input_size=300):
         """
@@ -238,64 +240,93 @@ def depth2Gray3(im_depth):
 class GGCNNNode(Node):
     def __init__(self):
         super().__init__('gg_cnn_image_processing') 
-        # Load GGCNN neural network model
+        self.get_logger().info("GGCNN node starting up...")
+
+        # Load GG-CNN model
         self.model_loader = GGCNNNet(MODEL_PATH)
 
-        # Create subscription to depth image topic
-        self.subscription = self.create_subscription(
-            Image,
-            '/segmented_depth_img',
-            self.gg_cnn_callback,
-            10
-        )
-
-        # Publisher to output grasping information
-        self.publisher_ = self.create_publisher(Float32MultiArray, '/grasp_positions', 10)
+        # Store the latest depth image
+        self.latest_depth_image = None
         self.bridge = CvBridge()
 
-    def gg_cnn_callback(self, msg):  
-        # Convert ROS Image message to OpenCV image
+        # Subscriptions
+        self.mask_sub = self.create_subscription(
+            Image, '/ggcnn_mask',
+            self.gg_cnn_callback, 10)
+
+        self.depth_sub = self.create_subscription(
+            Image, '/camera/camera/aligned_depth_to_color/image_raw',
+            self.depth_callback, 10)
+
+        # Publisher
+        self.publisher_ = self.create_publisher(Command, '/grasp_positions', 10) 
+        self.get_logger().info('>>  gg_CNN System ready  <<') 
+
+    def depth_callback(self, msg):
         try:
-            depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
+            self.latest_depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
         except Exception as e:
-            self.get_logger().error(f"Error converting image: {e}")
+            self.get_logger().error(f"Error converting depth image: {e}")
+
+    def gg_cnn_callback(self, msg):
+        if self.latest_depth_image is None:
+            self.get_logger().warn("No depth image available yet.")
             return
 
-        # Process the image using the GG-CNN model
-        row, col, grasp_angle, grasp_width_pixels = self.model_loader.predict(depth_image)
-        
-        z_pix = depth_image[col,row]
-        x_pix = (col - INTRINSIC_MATRIX[0, 2]) * z / INTRINSIC_MATRIX[0, 0]
-        y_pix = (row - INTRINSIC_MATRIX[1, 2]) * z / INTRINSIC_MATRIX[1, 1]
-        pix_coord = np.array([x_pix,y_pix,z_pix])
-        # In camera frame, assume Z points forward, X right, Y down
-        x_axis = np.array([np.cos(grasp_angle_rad), np.sin(grasp_angle_rad), 0])
-        z_axis = np.array([0, 0, 1])  # approach direction
-        y_axis = np.cross(z_axis, x_axis)
-        
-        # Re-orthogonalize (in case of rounding)
-        x_axis = np.cross(y_axis, z_axis)
-        
-        R = np.stack([x_axis, y_axis, z_axis], axis=1)  # 3x3 rotation matrix
-        
-        T = np.eye(4) 
-        T[:3,:3] = R  # Rotation matrix 
-        T[:3, 3] = pix_coord # camrea coordiates
-        
-        transform_came_to_robot_matrix = np.dot(ROBOT_TO_CAM_EXTRNSIC,T)
-        
-        print(transform_came_to_robot_matrix) 
-        
+        try:
+            # Convert the incoming mask image
+            mask = self.bridge.imgmsg_to_cv2(msg, desired_encoding='mono8')
 
-        # Prepare the output message with the grasp position (row, col), angle, and width
-        grasp_msg = Float32MultiArray()
-        grasp_msg.data = [row, col, grasp_angle, grasp_width_pixels]
-        
-        # Publish the grasp information
-        self.publisher_.publish(grasp_msg)
-        self.get_logger().info(f"Published grasp position: {grasp_msg.data}")    
+            # Ensure mask and depth image sizes match
+            if mask.shape != self.latest_depth_image.shape:
+                self.get_logger().error(f"Mask and depth image shape mismatch: {mask.shape} vs {self.latest_depth_image.shape}")
+                return
+
+            # Apply the mask to the depth image
+            masked_depth = np.where(mask == 255, self.latest_depth_image, 0)
+
+            # Run GG-CNN prediction
+            row, col, grasp_angle, grasp_width_pixels = self.model_loader.predict(masked_depth)
+
+            z_cam = masked_depth[col, row]  # depth in mm or m depending our code, think meter
+            if z_cam == 0:
+                self.get_logger().warn("Depth value is zero at predicted point.")
+                return
+
+            # Convert pixel to camera 3D coordinates
+            x_cam = (col - INTRINSIC_MATRIX[0, 2]) * z_cam / INTRINSIC_MATRIX[0, 0]
+            y_cam = (row - INTRINSIC_MATRIX[1, 2]) * z_cam / INTRINSIC_MATRIX[1, 1]
+            cam_coord = np.array([x_cam, y_cam, z_cam])
+
+            # Calculate orientation
+            x_axis = np.array([np.cos(grasp_angle), np.sin(grasp_angle), 0])
+            z_axis = np.array([0, 0, 1])
+            y_axis = np.cross(z_axis, x_axis)
+            x_axis = np.cross(y_axis, z_axis)
+
+            R = np.stack([x_axis, y_axis, z_axis], axis=1)
+
+            T = np.eye(4)
+            T[:3, :3] = R
+            T[:3, 3] = cam_coord
+
+            # Transform to robot frame
+            transform_camera_to_robot = ROBOT_TO_CAM_EXTRNSIC @ T
+
+            grasp_width_meters = grasp_width_pixels * z_cam / INTRINSIC_MATRIX[0, 0]
+
+            # Publish
+            grasp_msg = Command()
+            grasp_msg.htm = transform_camera_to_robot.flatten().tolist()
+            grasp_msg.gripper_distance = [grasp_width_meters]
+
+            self.publisher_.publish(grasp_msg)
+            self.get_logger().info(f"Published grasp command.")
+
+        except Exception as e:
+            self.get_logger().error(f"Error in gg_cnn_callback: {e}")
+   
   
-
 def main(args=None):
     rclpy.init(args=args) 
     node = GGCNNNode()
