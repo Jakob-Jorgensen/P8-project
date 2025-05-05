@@ -31,7 +31,7 @@ import numpy as np
 import torch
 import math
 from skimage.filters import gaussian
-from gg_cnn.ggcnn_structur import GGCNN 
+from gg_cnn.ggcnn_structur import GGCNN
 from gg_cnn.ggcnn2_structur import GGCNN2 
 from rob8_interfaces.msg import Command
 
@@ -43,17 +43,72 @@ GRASP_WIDTH_MAX = 200.0  # Maximum grasp width for visualization
 MODEL_CHOSE = 'ggcnn' # 'GGCNN' or 'GGCNN2'  # Choose the model to use
 HOME_PATH = '/home/max/Documents/P8-project/ROS2_MAX/src/gg_cnn/gg_cnn/' 
 
+### background depth image ### 
+ground_depth_img = cv2.imread(HOME_PATH + 'grounded-depth.png', cv2.IMREAD_UNCHANGED)
+
 ### Camera Calibration ### 
-INTRINSIC_MATRIX = np.array([[1.34772092e+03, 0.00000000e+00, 9.62833091e+02],
- [0.00000000e+00, 1.34663271e+03, 5.45299335e+02],
- [0.00000000e+00, 0.00000000e+00, 1.00000000e+00]])
+INTRINSIC_MATRIx = np.array([[909.0791015625,0.0,640.423583984375],[0.0,907.5655517578125,364.3811340332031],[0.0,0.0,1.0]])
 
-ROBOT_TO_CAM_EXTRNSIC = np.array([[ 0.79110791,  0.22299801,  0.56957893, -0.1363679 ],
- [ 0.13523332,  0.84436975, -0.51841265,  0.14765188],
- [-0.59654021,  0.4871464,   0.63783083,  0.58239576],
- [ 0. ,        0. ,         0. ,         1.        ]])
+#np.array([[1.34772092e+03, 0.00000000e+00, 9.62833091e+02],[0.00000000e+00, 1.34663271e+03, 5.45299335e+02],[0.00000000e+00, 0.00000000e+00, 1.00000000e+00]]) 
+
+#np.array([[909.0791015625,0.0,640.423583984375],[0.0,907.5655517578125,364.3811340332031],[0.0,0.0,1.0]])
 
 
+""" K
+- 909.0791015625
+- 0.0
+- 640.423583984375
+- 0.0
+- 907.5655517578125
+- 364.3811340332031
+- 0.0
+- 0.0
+- 1.0
+"""
+
+
+
+home_made_extrnsic=np.eye(4)   
+
+home_made_translation = np.eye(4)
+home_made_translation[:3, 3]  = np.array([-35,-62,-79]) # x, y, z 
+#home_made_extrnsic[:3, 3] = home_made_translation  
+print(home_made_translation)
+#a = 0
+
+home_made_roation = np.eye(4) 
+home_made_roation [:-1, :-1] = np.array([[np.cos(((1/2)*np.pi)),-np.sin(((1/2)*np.pi)),0],[np.sin(((1/2)*np.pi)),np.cos(((1/2)*np.pi)),0],[0,0,1]])  
+print(home_made_roation)
+
+home_made_extrnsic =   home_made_roation @ home_made_translation 
+#home_made_extrnsic[0,0] = 0
+#home_made_extrnsic[1,1] = 0
+print(home_made_extrnsic) 
+#rot_z = np.eye(4)  
+#b = -90
+#rot_z[:3, :3] = np.array([[np.cos((np.pi/180)*(b)),-np.sin((np.pi/180)*(b)),0],[np.sin((np.pi/180)*(b)),np.cos((np.pi/180)*(b)),0],[0,0,1]])   
+
+#rot_x = np.eye(4)
+#c = 180
+#rot_x[:3, :3] = np.array([[1,0,0],[0,np.cos((np.pi/180)*(c)),-np.sin((np.pi/180)*(c))],[0,np.sin((np.pi/180)*(c)),np.cos((np.pi/180)*(c))]]) 
+
+
+
+
+CAM_TO_ROBOT_EXTRNSIC =  home_made_extrnsic 
+
+""" 
+np.array([[0.05478242149131124, 0.9728897060947174, 0.2246875743571134, 0.01687956257455467],
+ [0.9936994802894625, -0.03108559732977296, -0.10768021411152463, 0.3283410621467196],
+ [0.09777642439770845, -0.22917090874189552, 0.9684629396205167, 0.4041309174793619],
+ [0, 0, 0, 1]])
+"""    
+    
+""" [[ 0.79110791,  0.22299801,  0.56957893, -0.1363679 ],
+  [ 0.13523332,  0.84436975, -0.51841265,  0.14765188],
+  [-0.59654021,  0.4871464,   0.63783083,  0.58239576],
+  [ 0. ,        0. ,         0. ,         1.        ]])
+"""
 if MODEL_CHOSE == 'ggcnn': 
     MODEL_PATH =  HOME_PATH+'pretraind-models/pretraind_ggccn.pt' # The GGCNN is trained on the cornell dataset 
     NETWORK = GGCNN()
@@ -65,7 +120,7 @@ else:
     raise ValueError('Please choose a valid model')
 #### END OF MODEL CHOICE ####
 
-def input_img(img, out_size=300):
+def input_img(img, out_size=320):
     """
     Crop the image, keeping the middle (320, 320) portion
         :param file: rgb file
@@ -92,17 +147,17 @@ def input_img(img, out_size=300):
 
 class GGCNNNet:
     def __init__(self, model):
+        # Load model 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')    
-        # Load model
         print('>> loading gg-CNN model')
         self.net = NETWORK  # GGCNN2() or  GGCNN()
         self.net.load_state_dict(torch.load(model, map_location=self.device), strict=True)   # True: exact match, False: load only matching key-value parameters, others load default values.
-        # self.net = self.net.to(device)
+        self.net = self.net.to(self.device)
         print('>> load done')  
         
 
 
-    def predict(self, img, input_size=300):
+    def predict(self, img, input_size=320):
         """
         Predict grasp model
             :param img: input depth image np.array (h, w)
@@ -213,6 +268,60 @@ def drawGrasps(img, grasps, mode='line'):
             img[row, col] = [color_b, color_g, color_r]
     return img  
 
+ 
+def inpaint(img, missing_value=0):
+    
+    #Inpaint missing values in depth image.
+    #:param missing_value: Value to fill in the depth image.
+    
+    img = cv2.copyMakeBorder(img, 1, 1, 1, 1, cv2.BORDER_DEFAULT)
+    mask = (img == missing_value).astype(np.uint8)
+
+    # Scale to keep as float, but has to be in bounds -1:1 to keep opencv happy.
+    scale = np.abs(img).max()
+    img = img.astype(np.float32) / scale  # Has to be float32, 64 not supported.
+    img = cv2.inpaint(img, mask, 1, cv2.INPAINT_NS)
+
+    # Back to original size and value range.
+    img = img[1:-1, 1:-1]
+    img = img * scale
+
+    return img 
+   
+""" 
+def inpaint(img, missing_value=0):
+    
+    #Inpaint missing values in a depth image.
+    
+    #:param img: Input image with missing values.
+    #:param missing_value: The value representing missing data.
+    #:return: Inpainted image.
+    
+    # Ensure float32 for OpenCV
+    img = img.astype(np.float32)
+
+    # Create mask of missing pixels
+    mask = (img == missing_value).astype(np.uint8)
+
+    # Replace missing values with 0 temporarily (needed for inpaint)
+    img_inpaint = img.copy()
+    img_inpaint[mask == 1] = 0
+
+    # Normalize only non-missing values for stability
+    valid_pixels = img[mask == 0]
+    if valid_pixels.size == 0:
+        return img  # nothing to inpaint
+    scale = np.abs(valid_pixels).max()
+    img_inpaint /= scale
+
+    # Inpaint
+    inpainted = cv2.inpaint(img_inpaint, mask, 1.0, cv2.INPAINT_TELEA)
+
+    # Rescale to original range
+    inpainted *= scale
+
+    return inpainted
+"""
 def depth2Gray3(im_depth):
     """
     Convert depth image to 3-channel 8-bit grayscale image
@@ -236,7 +345,85 @@ def depth2Gray3(im_depth):
     ret = np.expand_dims(ret, 2).repeat(3, axis=2)
     return ret
 
-# ROS 2 Node Implementation
+
+def apply_mask_and_center(image, mask, output_size=(1280, 720)):
+    # Use cv2.findContours to get bounding box of the object
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        raise ValueError("Mask resulted in an empty object.")
+    concat_contours = np.concatenate(contours)
+    x, y, w, h = cv2.boundingRect(concat_contours)
+
+    # Extract the masked region from the original image
+    masked_crop = image[y:y+h, x:x+w] * (mask[y:y+h, x:x+w])
+
+    # Find center of the masked region
+    ys, xs = np.where(mask[y:y+h, x:x+w] > 0)
+    if len(xs) == 0 or len(ys) == 0:
+        raise ValueError("Mask has no foreground pixels.")
+
+    # Background value estimation
+    h_crop, w_crop = masked_crop.shape[:2]
+    if False:
+        center_depth = masked_crop[h_crop//2, w_crop//2]
+        background_value = center_depth - 10
+    else:
+        corners = [
+            masked_crop[0, 0],
+            masked_crop[0, w_crop - 1],
+            masked_crop[h_crop - 1, 0],
+            masked_crop[h_crop - 1, w_crop - 1]
+        ]
+        background_value = np.median(corners)
+
+    # Calculate top-left corner of where to paste the masked object
+    target_x = output_size[0] // 2
+    target_y = output_size[1] // 2
+    offset_x = target_x - int(xs.mean())
+    offset_y = target_y - int(ys.mean())
+
+    # Create a blank canvas filled with background value
+    canvas = np.full((output_size[1], output_size[0]), background_value)
+
+    # Compute destination coordinates
+    paste_x1 = max(0, offset_x)
+    paste_y1 = max(0, offset_y)
+    paste_x2 = min(output_size[0], paste_x1 + w)
+    paste_y2 = min(output_size[1], paste_y1 + h)
+
+    # Compute source coordinates
+    crop_x1 = 0
+    crop_y1 = 0
+    crop_x2 = paste_x2 - paste_x1
+    crop_y2 = paste_y2 - paste_y1
+
+    # Prepare cropped mask and masked part
+    cropped_mask = mask[y:y+h, x:x+w][crop_y1:crop_y2, crop_x1:crop_x2]
+    masked_part = masked_crop[crop_y1:crop_y2, crop_x1:crop_x2]
+
+    # Paste the masked object onto the canvas
+    region = canvas[paste_y1:paste_y2, paste_x1:paste_x2]
+    canvas[paste_y1:paste_y2, paste_x1:paste_x2] = np.where(
+        cropped_mask > 0,
+        masked_part,
+        region
+    )
+
+    # Return canvas and transformation info
+    transformation = {
+        "offset_x": offset_x,
+        "offset_y": offset_y,
+        "crop_origin_x": x,
+        "crop_origin_y": y
+    }
+
+    return canvas, transformation
+
+def map_canvas_to_original(x_canvas, y_canvas, transformation):
+    x_orig = x_canvas - transformation["offset_x"] + transformation["crop_origin_x"]
+    y_orig = y_canvas - transformation["offset_y"] + transformation["crop_origin_y"]
+    return x_orig, y_orig
+
 class GGCNNNode(Node):
     def __init__(self):
         super().__init__('gg_cnn_image_processing') 
@@ -262,13 +449,13 @@ class GGCNNNode(Node):
         self.publisher_ = self.create_publisher(Command, '/grasp_positions', 10) 
         self.get_logger().info('>>  gg_CNN System ready  <<') 
 
-    def depth_callback(self, msg):
+    def depth_callback(self, msg:Image):
         try:
             self.latest_depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
         except Exception as e:
             self.get_logger().error(f"Error converting depth image: {e}")
 
-    def gg_cnn_callback(self, msg):
+    def gg_cnn_callback(self, msg:Image):
         if self.latest_depth_image is None:
             self.get_logger().warn("No depth image available yet.")
             return
@@ -276,28 +463,41 @@ class GGCNNNode(Node):
         try:
             # Convert the incoming mask image
             mask = self.bridge.imgmsg_to_cv2(msg, desired_encoding='mono8')
-
+            mask = np.where(mask==0,0,mask).astype(np.uint8)
             # Ensure mask and depth image sizes match
             if mask.shape != self.latest_depth_image.shape:
                 self.get_logger().error(f"Mask and depth image shape mismatch: {mask.shape} vs {self.latest_depth_image.shape}")
                 return
+            
+            inpainted_depth=inpaint(self.latest_depth_image)    
+            
+            masked_inpainted,transform = apply_mask_and_center(inpainted_depth, mask)
+           
+            row, col, grasp_angle, grasp_width_pixels = self.model_loader.predict(masked_inpainted)#,input_size=320)  
 
-            # Apply the mask to the depth image
-            masked_depth = np.where(mask == 255, self.latest_depth_image, 0)
+            x_orig ,y_orig = map_canvas_to_original(col,row,transform)
+            
 
-            # Run GG-CNN prediction
-            row, col, grasp_angle, grasp_width_pixels = self.model_loader.predict(masked_depth)
+            z_cam = self.latest_depth_image[y_orig,x_orig] # The depth is in mm 
+            #test=depth2Gray3(masked_inpainted)
+            inpainted_depth3d = depth2Gray3(self.latest_depth_image)
+            grasp_img = drawGrasps(inpainted_depth3d,[[y_orig,x_orig,grasp_angle,grasp_width_pixels]],mode='line')
+            #grasp_test = drawGrasps(test,[[row,col,grasp_angle,grasp_width_pixels]],mode='line')
+           
+            cv2.imshow("inpainted_grasp_img", grasp_img)   
+            #cv2.imshow("test",grasp_test)
 
-            z_cam = masked_depth[col, row]  # depth in mm or m depending our code, think meter
+            cv2.waitKey(1)
+
             if z_cam == 0:
                 self.get_logger().warn("Depth value is zero at predicted point.")
                 return
-
+            
             # Convert pixel to camera 3D coordinates
-            x_cam = (col - INTRINSIC_MATRIX[0, 2]) * z_cam / INTRINSIC_MATRIX[0, 0]
-            y_cam = (row - INTRINSIC_MATRIX[1, 2]) * z_cam / INTRINSIC_MATRIX[1, 1]
+            x_cam = (x_orig - INTRINSIC_MATRIx[0, 2]) * z_cam / INTRINSIC_MATRIx[0, 0]
+            y_cam = (y_orig - INTRINSIC_MATRIx[1, 2]) * z_cam / INTRINSIC_MATRIx[1, 1]
             cam_coord = np.array([x_cam, y_cam, z_cam])
-
+            #print(f"coodiates {cam_coord} \n")
             # Calculate orientation
             x_axis = np.array([np.cos(grasp_angle), np.sin(grasp_angle), 0])
             z_axis = np.array([0, 0, 1])
@@ -307,25 +507,34 @@ class GGCNNNode(Node):
             R = np.stack([x_axis, y_axis, z_axis], axis=1)
 
             T = np.eye(4)
-            T[:3, :3] = R
+            #T[:3, :3] = R
             T[:3, 3] = cam_coord
-
-            # Transform to robot frame
-            transform_camera_to_robot = ROBOT_TO_CAM_EXTRNSIC @ T
-
-            grasp_width_meters = grasp_width_pixels * z_cam / INTRINSIC_MATRIX[0, 0]
-
+            # Transform to robot frame 
+            #print(f" cam {T} \n")  
+            #print(f"inverse cam{np.linalg.inv(T)} \n")
+            transform_camera_to_robot =    home_made_extrnsic @ T             
+            grasp_width_mm = (grasp_width_pixels * z_cam / INTRINSIC_MATRIx[0, 0])/2
+            #print(grasp_width_mm)
+            print(transform_camera_to_robot)
             # Publish
-            grasp_msg = Command()
-            grasp_msg.htm = transform_camera_to_robot.flatten().tolist()
-            grasp_msg.gripper_distance = [grasp_width_meters]
+            grasp_msg = Command()  
+            transform_camera_to_robot_copy = transform_camera_to_robot.copy()
+            transform_camera_to_robot_copy[0,3] = transform_camera_to_robot[1,3] 
+            transform_camera_to_robot_copy[1,3] = transform_camera_to_robot[0,3]  
+            transform_camera_to_robot_copy[2,3] = -transform_camera_to_robot[2,3]   
+            
+            #print(transform_camera_to_robot_copy) 
+            grasp_msg.htm = transform_camera_to_robot_copy.flatten().tolist() 
+            grasp_msg.gripper_distance = [grasp_width_mm] 
+            grasp_msg.frame = "world"
 
             self.publisher_.publish(grasp_msg)
-            self.get_logger().info(f"Published grasp command.")
+            self.get_logger().info(f"Published grasp command.") 
+            
 
         except Exception as e:
             self.get_logger().error(f"Error in gg_cnn_callback: {e}")
-   
+
   
 def main(args=None):
     rclpy.init(args=args) 
