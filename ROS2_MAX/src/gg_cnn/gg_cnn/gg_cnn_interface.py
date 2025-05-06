@@ -29,7 +29,8 @@ from cv_bridge import CvBridge
 import cv2
 import numpy as np
 import torch
-import math
+import math 
+from skimage.draw import line
 from skimage.filters import gaussian
 from gg_cnn.ggcnn_structur import GGCNN
 from gg_cnn.ggcnn2_structur import GGCNN2 
@@ -37,7 +38,10 @@ from rob8_interfaces.msg import Command
 
 
 # Device configuration  
-GRASP_WIDTH_MAX = 200.0  # Maximum grasp width for visualization 
+GRASP_WIDTH_MAX = 200.0  # Maximum grasp width for visualization   
+FINGER_1L =  15.0 #mm
+FINGER_2L = 5.0 #mm v
+world_offset = FINGER_1L + 5.0 # table offset(17mm) and finger hight
 
 ### CHOSE THE MODEL TO USE ###
 MODEL_CHOSE = 'ggcnn' # 'GGCNN' or 'GGCNN2'  # Choose the model to use
@@ -343,7 +347,122 @@ def depth2Gray3(im_depth):
 
     ret = (im_depth * k + b).astype(np.uint8)
     ret = np.expand_dims(ret, 2).repeat(3, axis=2)
-    return ret
+    return ret 
+def ptsOnRect(pts):
+    """
+    Get points on five lines of a rectangle
+    Five lines are: four edge lines and one diagonal line
+    pts: np.array, shape=(4, 2) (row, col)
+    """
+    rows1, cols1 = line(int(pts[0, 0]), int(pts[0, 1]), int(pts[1, 0]), int(pts[1, 1]))
+    rows2, cols2 = line(int(pts[1, 0]), int(pts[1, 1]), int(pts[2, 0]), int(pts[2, 1]))
+    rows3, cols3 = line(int(pts[2, 0]), int(pts[2, 1]), int(pts[3, 0]), int(pts[3, 1]))
+    rows4, cols4 = line(int(pts[3, 0]), int(pts[3, 1]), int(pts[0, 0]), int(pts[0, 1]))
+    rows5, cols5 = line(int(pts[0, 0]), int(pts[0, 1]), int(pts[2, 0]), int(pts[2, 1]))
+
+    rows = np.concatenate((rows1, rows2, rows3, rows4, rows5), axis=0)
+    cols = np.concatenate((cols1, cols2, cols3, cols4, cols5), axis=0)
+    return rows, cols
+
+def ptsOnRotateRect(pt1, pt2, w):
+    """
+    Draw a rectangle
+    Given two points in the image (x1, y1) and (x2, y2), draw a line segment with these points as endpoints,
+    with width w. This creates a rectangle in the image.
+    pt1: [row, col] 
+    w: width in pixels
+    img: single channel image to draw rectangle on
+    """
+    y1, x1 = pt1
+    y2, x2 = pt2
+
+    if x2 == x1:
+        if y1 > y2:
+            angle = math.pi / 2
+        else:
+            angle = 3 * math.pi / 2
+    else:
+        tan = (y1 - y2) / (x2 - x1)
+        angle = np.arctan(tan)
+
+    points = []
+    points.append([y1 - w / 2 * np.cos(angle), x1 - w / 2 * np.sin(angle)])
+    points.append([y2 - w / 2 * np.cos(angle), x2 - w / 2 * np.sin(angle)])
+    points.append([y2 + w / 2 * np.cos(angle), x2 + w / 2 * np.sin(angle)])
+    points.append([y1 + w / 2 * np.cos(angle), x1 + w / 2 * np.sin(angle)])
+    points = np.array(points) 
+    return ptsOnRect(points)	# Get rows and columns of all points in rectangle
+
+def collision_detection(pt, dep, angle, depth_map, finger_l1, finger_l2):
+    """
+    Collision detection
+    pt: (row, col)
+    angle: grasp angle in radians
+    depth_map: depth image
+    finger_l1 l2: length in pixels
+
+    return:
+        True: No collision
+        False: Collision detected
+    """
+    row, col = pt
+
+    # Two points
+    row1 = int(row - finger_l2 * math.sin(angle))
+    col1 = int(col + finger_l2 * math.cos(angle))
+    
+    # Draw gripper rectangle on cross-section
+    # Check if there are any 1s in the rectangular area of the cross-section
+    rows, cols = ptsOnRotateRect([row, col], [row1, col1], finger_l1)
+
+    if np.min(depth_map[rows, cols]) > dep:   # No collision
+        return True
+    return False    # Collision detected
+
+def getGraspDepth(camera_depth, grasp_row, grasp_col, object_angle, grasp_width, finger_l1, finger_l2):
+    """
+    Calculate maximum collision-free grasp depth (descent depth relative to object surface)
+    based on depth image, grasp angle, and grasp width
+    The grasp point is at the center of the depth image
+    camera_depth: camera depth image from directly above grasp point
+    object_angle: grasp angle in radians
+    grasp_width: grasp width in pixels
+    finger_l1 l2: gripper dimensions in pixels
+
+    return: grasp depth relative to camera
+    """
+    # grasp_row = int(camera_depth.shape[0] / 2)
+    # grasp_col = int(camera_depth.shape[1] / 2)
+    # First calculate endpoints of gripper's two fingers
+    k = math.tan(object_angle)
+
+    grasp_width /= 2
+    if k == 0:
+        dx = grasp_width
+        dy = 0
+    else:
+        dx = k / abs(k) * grasp_width / pow(k ** 2 + 1, 0.5)
+        dy = k * dx
+    
+    pt1 = (int(grasp_row - dy), int(grasp_col + dx))
+    pt2 = (int(grasp_row + dy), int(grasp_col - dx))
+
+    # Changed to: start from highest point on grasp line and calculate grasp depth downward
+    # until collision or maximum depth is reached
+    rr, cc = line(pt1[0], pt1[1], pt2[0], pt2[1])   # Get coordinates of points along grasp line
+    min_depth = np.min(camera_depth[rr, cc])
+    # print('camera_depth[grasp_row, grasp_col] = ', camera_depth[grasp_row, grasp_col])
+
+    grasp_depth = min_depth + 0.003
+    while grasp_depth < min_depth + 0.05:
+        if not collision_detection(pt1, grasp_depth, object_angle, camera_depth, finger_l1, finger_l2):
+            return grasp_depth - 0.003
+        if not collision_detection(pt2, grasp_depth, object_angle + math.pi, camera_depth, finger_l1, finger_l2):
+            return grasp_depth - 0.003
+        grasp_depth += 0.003
+
+    return grasp_depth
+
 
 
 def apply_mask_and_center(image, mask, output_size=(1280, 720)):
@@ -434,17 +553,23 @@ class GGCNNNode(Node):
 
         # Store the latest depth image
         self.latest_depth_image = None
-        self.bridge = CvBridge()
+        self.bridge = CvBridge()  
+        
+        self.depth_sub = self.create_subscription(
+            Image, '/camera/camera/aligned_depth_to_color/image_raw',
+            self.depth_callback, 10) 
+        
+        self.RGB_sub = self.create_subscription(
+            Image, 'camera/camera/color/image_raw',
+            self.RGB_callback, 10)
+
 
         # Subscriptions
         self.mask_sub = self.create_subscription(
             Image, '/ggcnn_mask',
             self.gg_cnn_callback, 10)
 
-        self.depth_sub = self.create_subscription(
-            Image, '/camera/camera/aligned_depth_to_color/image_raw',
-            self.depth_callback, 10)
-
+        
         # Publisher
         self.publisher_ = self.create_publisher(Command, '/grasp_positions', 10) 
         self.get_logger().info('>>  gg_CNN System ready  <<') 
@@ -453,87 +578,123 @@ class GGCNNNode(Node):
         try:
             self.latest_depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
         except Exception as e:
-            self.get_logger().error(f"Error converting depth image: {e}")
+            self.get_logger().error(f"Error converting depth image: {e}") 
+
+    def RGB_callback(self, msg:Image):
+        try:
+            self.latest_RGB_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough') 
+            self.latest_RGB_image = cv2.cvtColor(self.latest_RGB_image,cv2.COLOR_BGR2RGB)
+        except Exception as e:
+            self.get_logger().error(f"Error converting RGB image: {e}")
+
 
     def gg_cnn_callback(self, msg:Image):
-        if self.latest_depth_image is None:
-            self.get_logger().warn("No depth image available yet.")
+        if self.latest_depth_image is None or self.latest_RGB_image is None:
+            self.get_logger().warn("No depth or RGB image available yet.")
             return
 
-        try:
-            # Convert the incoming mask image
-            mask = self.bridge.imgmsg_to_cv2(msg, desired_encoding='mono8')
-            mask = np.where(mask==0,0,mask).astype(np.uint8)
-            # Ensure mask and depth image sizes match
-            if mask.shape != self.latest_depth_image.shape:
-                self.get_logger().error(f"Mask and depth image shape mismatch: {mask.shape} vs {self.latest_depth_image.shape}")
-                return
-            
-            inpainted_depth=inpaint(self.latest_depth_image)    
-            
-            masked_inpainted,transform = apply_mask_and_center(inpainted_depth, mask)
-           
-            row, col, grasp_angle, grasp_width_pixels = self.model_loader.predict(masked_inpainted)#,input_size=320)  
+        #try:
+        # Convert the incoming mask image
+        mask = self.bridge.imgmsg_to_cv2(msg, desired_encoding='mono8')
+        mask = np.where(mask==0,0,mask).astype(np.uint8)
+        # Ensure mask and depth image sizes match
+        if mask.shape != self.latest_depth_image.shape:
+            self.get_logger().error(f"Mask and depth image shape mismatch: {mask.shape} vs {self.latest_depth_image.shape}")
+            return
+        
+        inpainted_depth=inpaint(self.latest_depth_image)    
+        
+        masked_inpainted,transform = apply_mask_and_center(inpainted_depth, mask)
+        
+        row, col, object_angle, grasp_width_pixels = self.model_loader.predict(masked_inpainted)#,input_size=320)  
 
-            x_orig ,y_orig = map_canvas_to_original(col,row,transform)
-            
+        print(f"object_angle: {object_angle}")
 
-            z_cam = self.latest_depth_image[y_orig,x_orig] # The depth is in mm 
-            #test=depth2Gray3(masked_inpainted)
-            inpainted_depth3d = depth2Gray3(self.latest_depth_image)
-            grasp_img = drawGrasps(inpainted_depth3d,[[y_orig,x_orig,grasp_angle,grasp_width_pixels]],mode='line')
-            #grasp_test = drawGrasps(test,[[row,col,grasp_angle,grasp_width_pixels]],mode='line')
-           
-            cv2.imshow("inpainted_grasp_img", grasp_img)   
-            #cv2.imshow("test",grasp_test)
+        x_orig ,y_orig = map_canvas_to_original(col,row,transform)
+    
+        z_cam = self.latest_depth_image[y_orig,x_orig] # The depth is in mm 
+        
+        #inpainted_depth3d = depth2Gray3(self.latest_depth_image)
+        grasp_img = drawGrasps(self.latest_RGB_image,[[y_orig,x_orig,object_angle,grasp_width_pixels]],mode='line')
+        
+        
+        cv2.imshow("inpainted_grasp_img", grasp_img)   
+        #cv2.imshow("test",grasp_test)
 
-            cv2.waitKey(1)
+        cv2.waitKey(1)
 
-            if z_cam == 0:
-                self.get_logger().warn("Depth value is zero at predicted point.")
-                return
-            
-            # Convert pixel to camera 3D coordinates
-            x_cam = (x_orig - INTRINSIC_MATRIx[0, 2]) * z_cam / INTRINSIC_MATRIx[0, 0]
-            y_cam = (y_orig - INTRINSIC_MATRIx[1, 2]) * z_cam / INTRINSIC_MATRIx[1, 1]
-            cam_coord = np.array([x_cam, y_cam, z_cam])
-            #print(f"coodiates {cam_coord} \n")
-            # Calculate orientation
-            x_axis = np.array([np.cos(grasp_angle), np.sin(grasp_angle), 0])
-            z_axis = np.array([0, 0, 1])
-            y_axis = np.cross(z_axis, x_axis)
-            x_axis = np.cross(y_axis, z_axis)
+        if z_cam == 0:
+            self.get_logger().warn("Depth value is zero at predicted point.")
+            return
+        
 
-            R = np.stack([x_axis, y_axis, z_axis], axis=1)
+        finger1_lengt_pixels =  FINGER_1L* INTRINSIC_MATRIx[0, 0] / z_cam  
+        finger2_lengt_pixels =  FINGER_2L * INTRINSIC_MATRIx[0, 0] / z_cam
 
-            T = np.eye(4)
-            #T[:3, :3] = R
-            T[:3, 3] = cam_coord
-            # Transform to robot frame 
-            #print(f" cam {T} \n")  
-            #print(f"inverse cam{np.linalg.inv(T)} \n")
-            transform_camera_to_robot =    home_made_extrnsic @ T             
-            grasp_width_mm = (grasp_width_pixels * z_cam / INTRINSIC_MATRIx[0, 0])/2
-            #print(grasp_width_mm)
-            print(transform_camera_to_robot)
-            # Publish
-            grasp_msg = Command()  
-            transform_camera_to_robot_copy = transform_camera_to_robot.copy()
-            transform_camera_to_robot_copy[0,3] = transform_camera_to_robot[1,3] 
-            transform_camera_to_robot_copy[1,3] = transform_camera_to_robot[0,3]  
-            transform_camera_to_robot_copy[2,3] = -transform_camera_to_robot[2,3]   
-            
-            #print(transform_camera_to_robot_copy) 
-            grasp_msg.htm = transform_camera_to_robot_copy.flatten().tolist() 
-            grasp_msg.gripper_distance = [grasp_width_mm] 
-            grasp_msg.frame = "world"
+        # Convert pixel to camera 3D coordinates
+        x_cam = (x_orig - INTRINSIC_MATRIx[0, 2]) * z_cam / INTRINSIC_MATRIx[0, 0]
+        y_cam = (y_orig - INTRINSIC_MATRIx[1, 2]) * z_cam / INTRINSIC_MATRIx[1, 1] 
+        grasp_depth=getGraspDepth(self.latest_depth_image,y_orig,x_orig,object_angle,grasp_width_pixels,finger1_lengt_pixels ,finger2_lengt_pixels ) 
+        grasp_z = max(0.7 - grasp_depth,0)
+        cam_coord = np.array([x_cam, y_cam,z_cam - world_offset])#)
+        
+        # x_axis_init = np.array([np.cos(object_angle), np.sin(object_angle), 0])
+        # z_axis = np.array([0, 0, 1])
+        # y_axis = np.cross(z_axis, x_axis_init)
+        # x_axis = np.cross(y_axis, z_axis)  
+        # R = np.stack([x_axis, y_axis, z_axis], axis=1)
 
-            self.publisher_.publish(grasp_msg)
-            self.get_logger().info(f"Published grasp command.") 
-            
+        # R = np.array([[ np.cos((-object_angle)*(np.pi/180)), -np.sin((-object_angle)*(np.pi/180)), 0.0 ],
+        #               [ np.sin((-object_angle)*(np.pi/180)), np.cos((-object_angle)*(np.pi/180)),  0.0 ],
+        #               [ 0.0,                                0.0,                                 1.0 ]])
 
-        except Exception as e:
-            self.get_logger().error(f"Error in gg_cnn_callback: {e}")
+
+        if object_angle < math.pi:
+            grasp_angle = (object_angle + math.pi - int((object_angle + math.pi) // (2 * math.pi)) * 2 * math.pi) - 1.57079 - np.pi
+        else:
+            grasp_angle = (object_angle + math.pi - int((object_angle + math.pi) // (2 * math.pi)) * 2 * math.pi) + 1.57079
+
+
+        R = np.array([[ np.cos(grasp_angle), -np.sin(grasp_angle), 0.0 ],
+                      [ np.sin(grasp_angle), np.cos(grasp_angle),  0.0 ],
+                      [ 0.0,                 0.0,                  1.0 ]])
+        
+        print(f"R: \n{R}")
+
+        T_cam = np.eye(4) 
+        T_coord = np.eye(4) 
+        T_rot = np.eye(4)
+        T_coord[:3, 3] = cam_coord  
+        # T_rot[:3,:3] = R 
+
+        T_cam = T_rot @ T_coord
+
+        # Transform to robot frame 
+        #print(f" cam {T} \n")  
+        #print(f"inverse cam{np.linalg.inv(T)} \n")
+        transform_camera_to_robot = home_made_extrnsic @ T_cam            
+        grasp_width_mm = (grasp_width_pixels * z_cam / INTRINSIC_MATRIx[0, 0]) 
+        if grasp_width_mm > 80.0 : 
+            grasp_width_mm = 79.0
+
+        transform_camera_to_robot[:3, :3] = transform_camera_to_robot[:3, :3] @ R
+
+        #print(grasp_width_mm)
+        print(transform_camera_to_robot)
+        # Publish
+        grasp_msg = Command()  
+        
+        #print(transform_camera_to_robot_copy) 
+        grasp_msg.htm = transform_camera_to_robot.flatten().tolist() 
+        grasp_msg.gripper_distance = [grasp_width_mm] 
+        grasp_msg.frame = "world"
+
+        self.publisher_.publish(grasp_msg)
+        self.get_logger().info(f"Published grasp command.") 
+        
+
+        #except Exception as e:
+        #    self.get_logger().error(f"Error in gg_cnn_callback: {e}")
 
   
 def main(args=None):
