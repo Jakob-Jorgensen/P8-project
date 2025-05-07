@@ -5,7 +5,8 @@ import geometry_msgs.msg
 from scipy.spatial.transform import Rotation as R  # SciPy for quaternion math
 import numpy as np
 import socket
-import time
+import actionlib
+from franka_gripper.msg import GraspAction, GraspGoal, GraspEpsilon
 
 class Panda_Custom_Controller(): 
     def __init__(self):
@@ -19,12 +20,16 @@ class Panda_Custom_Controller():
         self.manipulator_group = moveit_commander.MoveGroupCommander("panda_arm")
         self.gripper_group = moveit_commander.MoveGroupCommander("panda_hand")
 
+        # Create action client
+        self.client = actionlib.SimpleActionClient("/franka_gripper/grasp", GraspAction)
+        self.client.wait_for_server()
+
         self.manipulator_group.set_planning_time(10.0)
         self.manipulator_group.set_goal_tolerance(0.01)
         self.manipulator_group.set_goal_orientation_tolerance(0.01)
 
-        self.manipulator_group.set_max_velocity_scaling_factor(0.2)     # 0.2  # 20% of max velocity
-        self.manipulator_group.set_max_acceleration_scaling_factor(0.1) # 0.1  # 10% of max acceleration
+        self.manipulator_group.set_max_velocity_scaling_factor(0.4)     # 0.2  # 20% of max velocity
+        self.manipulator_group.set_max_acceleration_scaling_factor(0.5) # 0.1  # 10% of max acceleration
 
         # Initialize tf2 listener
         self.tf_buffer = tf2_ros.Buffer()
@@ -38,7 +43,7 @@ class Panda_Custom_Controller():
         rospy.logerr("Hello world!")
 
         self.adress = None
-        self.server_address = ('100.114.98.19', 20001)
+        self.server_address = ('100.114.98.19', 20000)
 
         # Create a UDP socket
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -151,7 +156,7 @@ class Panda_Custom_Controller():
 
                 if state == 0: # Go to Home
                     rospy.loginfo_throttle(10, f"State {state} - Go to Home")
-                    _ = self.homogenous_transformation_matrix_to_pose(self.world_home_transformation, input_frame_of_reference= "world", move_when_done= True, relative_movement= False, gripper_distance= 79.0)#_ = self.homogenous_transformation_matrix_to_pose(self.top_down_isometric, input_frame_of_reference= "world", move_when_done= True, relative_movement= False, gripper_distance= 790.0)
+                    _ = self.homogenous_transformation_matrix_to_pose(self.world_home_transformation, input_frame_of_reference= "world", move_when_done= True, grip= False, relative_movement= False) #_ = self.homogenous_transformation_matrix_to_pose(self.top_down_isometric, input_frame_of_reference= "world", move_when_done= True, relative_movement= False, gripper_distance= 790.0)
                     state += 1
 
                 if state == 1: # Go to object
@@ -163,10 +168,12 @@ class Panda_Custom_Controller():
                         self.command = self.received_command
                         
                         command_world = self.panda_hand_frame_to_world_frame(self.received_command[0])
+                        rospy.loginfo(f"command_world: \n{command_world}")
 
                         pose = self.homogenous_transformation_matrix_to_pose(
                             homogenous_transformation_matrix= command_world,
-                            gripper_distance= 79.0,
+                            grip = True,
+                            gripper_distance= self.command[1],
                             input_frame_of_reference= "world",
                             relative_movement= False,
                             move_when_done= True,
@@ -179,15 +186,13 @@ class Panda_Custom_Controller():
 
                         pose = self.homogenous_transformation_matrix_to_pose(
                             homogenous_transformation_matrix= command_world_without_rotation,
-                            gripper_distance= self.command[1],
                             input_frame_of_reference= "world",
                             relative_movement= False,
                             move_when_done= True,
-                            z_offset= True,
-                            z_offset_value= 0.1
+                            grip= False
                         )
 
-                       # state += 1
+                        state += 1
 
                    # except Exception as e:
                    #     rospy.logerr_throttle(10, f"Failed with error: \n{e}")
@@ -195,34 +200,42 @@ class Panda_Custom_Controller():
 
                 if state == 2: # Grasp object
                     rospy.loginfo(f"State {state} - Grasp object")
-                    _ = self.homogenous_transformation_matrix_to_pose(self.identity_transform, input_frame_of_reference= "world", move_when_done= True, relative_movement= True, gripper_distance= 10.0)
-
+                    self.grasp(target= 1.0)
                     state += 1
 
                 if state == 3: # Home
+                    rospy.loginfo(f"world_home_transformation: \n{self.world_home_transformation}")
+                    rospy.loginfo(f"command_world: \n{command_world}")
+                    _ = self.homogenous_transformation_matrix_to_pose(self.world_home_transformation, input_frame_of_reference= "world", move_when_done= True, relative_movement= False, grip= False)
+
+                    self.world_home_transformation[:3, :3] = np.linalg.inv(command_world[:3, :3])
+                    rospy.loginfo(f"world_home_transformation, but with inv(command_world_rot): \n{self.world_home_transformation}")
+
                     rospy.loginfo(f"State {state} - Home")
-                    _ = self.homogenous_transformation_matrix_to_pose(self.world_home_transformation, input_frame_of_reference= "world", move_when_done= True, relative_movement= False, gripper_distance= self.command[1])
-                    state += 1
+                    _ = self.homogenous_transformation_matrix_to_pose(self.world_home_transformation, input_frame_of_reference= "world", move_when_done= True, relative_movement= False, grip= False)
+                    self.grip(79.0)
+                    #state += 1
+                    state = 1
 
                 if state == 4: # Rotate for hand over
                     rospy.loginfo(f"State {state} - Rotate for hand over")
-                    _ = self.homogenous_transformation_matrix_to_pose(self.rotate_hand_over, input_frame_of_reference="panda_hand", move_when_done=True, relative_movement= False, gripper_distance= self.command[1])
+                    _ = self.homogenous_transformation_matrix_to_pose(self.rotate_hand_over, input_frame_of_reference="panda_hand", move_when_done=True, relative_movement= False, grip= False)
                     state += 1
                 
                 if state == 5: # Go to hand over
                     rospy.loginfo(f"State {state} - Go to hand over")
-                    _ = self.homogenous_transformation_matrix_to_pose(self.hand_over, input_frame_of_reference= "world", move_when_done= True, relative_movement= False, gripper_distance= self.command[1])
+                    _ = self.homogenous_transformation_matrix_to_pose(self.hand_over, input_frame_of_reference= "world", move_when_done= True, relative_movement= False, grip= False)
                     state += 1
 
                 if state == 6: # Release object
                     rospy.loginfo(f"State {state} - Release object")
-                    _ = self.homogenous_transformation_matrix_to_pose(self.rotate_world_home, input_frame_of_reference= "panda_hand", move_when_done= True, relative_movement= True, gripper_distance= 79.0)
+                    _ = self.homogenous_transformation_matrix_to_pose(self.rotate_world_home, input_frame_of_reference= "panda_hand", move_when_done= True, relative_movement= True, grip= True, gripper_distance= 79.0)
                     state += 1
 
                 if state == 7: # Home
                     rospy.loginfo(f"State {state} - Home")
-                    _ = self.homogenous_transformation_matrix_to_pose(self.rotate_world_home, input_frame_of_reference="panda_hand", move_when_done=True, relative_movement= False, gripper_distance= 79.0)
-                    _ = self.homogenous_transformation_matrix_to_pose(self.world_home_transformation, input_frame_of_reference= "world", move_when_done= True, relative_movement= False, gripper_distance= 79.0)
+                    _ = self.homogenous_transformation_matrix_to_pose(self.rotate_world_home, input_frame_of_reference="panda_hand", move_when_done=True, relative_movement= False, grip= False)
+                    _ = self.homogenous_transformation_matrix_to_pose(self.world_home_transformation, input_frame_of_reference= "world", move_when_done= True, relative_movement= False, grip= False)
                     state = 0
 
         except TimeoutError:
@@ -300,7 +313,7 @@ class Panda_Custom_Controller():
         return homogenous_transformation_matrix_world
 
 
-    def homogenous_transformation_matrix_to_pose(self, homogenous_transformation_matrix: np.ndarray, gripper_distance: float, input_frame_of_reference: str, relative_movement: bool, move_when_done: bool= False, z_offset: bool= False, z_offset_value: float= 0.0):
+    def homogenous_transformation_matrix_to_pose(self, homogenous_transformation_matrix: np.ndarray, input_frame_of_reference: str, relative_movement: bool, gripper_distance: float= 79.0, move_when_done: bool= False, grip: bool= False, grasp: bool= False, z_offset: bool= False, z_offset_value: float= 0.0):
         """
         Takes a homogenous transformation matrix and a frame of reference (see the ROS tf tree).
         - The two most important frames are "world" which is at the same position as the base (which is panda_link0), and "panda_hand" which is the tool.
@@ -386,13 +399,18 @@ class Panda_Custom_Controller():
             target_pose.orientation.z = rotation[2]
             target_pose.orientation.w = rotation[3]
 
-
+        table_offset = 0.139 # m
+        if target_pose.position.z < table_offset:
+            target_pose.position.z = table_offset
 
         if move_when_done:
             rospy.loginfo(f"pose: \n{target_pose}")
             self.move_to_target(target_pose)
             rospy.loginfo(f"gripper_distance: \n{gripper_distance}")
-            self.grip(gripper_distance)
+            if grip:
+                self.grip(gripper_distance)
+            if grasp:
+                self.grasp(target= gripper_distance)
             return target_pose
 
         else:
@@ -455,13 +473,46 @@ class Panda_Custom_Controller():
         self.gripper_group.stop()
 
 
+    def grasp(self, target=80.0, min_gripper=0.0, max_gripper=80.0, speed=0.05, force=20.0):
+        """
+        Closes the gripper to a target mm distance between the claws using force-based control.
+        Uses the franka_gripper action interface.
+
+        :param target: Desired gripper opening in mm (default: 80 mm).
+        :param min_gripper: Minimum gripper range in mm (default: 0.0 mm).
+        :param max_gripper: Maximum gripper range in mm (default: 80.0 mm).
+        :param speed: Gripper closing speed in m/s (default: 0.05).
+        :param force: Gripper grasping force in N (default: 20.0).
+        """
+        rospy.loginfo(f"[grip] target: {target} mm")
+
+        # Convert target from mm to meters and map to [0.0, 0.08] (gripper's real opening range in meters)
+        width = self.map_range(target, min_gripper, max_gripper, 0.0, 0.08)
+
+        # Define grasp goal
+        grasp_goal = GraspGoal()
+        grasp_goal.width = width
+        grasp_goal.epsilon = GraspEpsilon(inner=0.005, outer=0.005)
+        grasp_goal.speed = speed
+        grasp_goal.force = force
+
+        # Send goal
+        self.client.send_goal(grasp_goal)
+        self.client.wait_for_result()
+
+        result = self.client.get_result()
+        rospy.loginfo(f"[grip] Grasp result: {result.success}")
+
+
+
+
     def home(self):
         """
         Homes the manipulator to a position set in init, rotates the gripper to face towards world x, fully closes and opens the gripper.
         """
 
-        _ = self.homogenous_transformation_matrix_to_pose(self.base_home_transformation, input_frame_of_reference="panda_link0", move_when_done=True, relative_movement= False, gripper_distance= 1.0)
-        _ = self.homogenous_transformation_matrix_to_pose(self.rotate_end_effector_around_z, input_frame_of_reference="panda_hand", move_when_done=True, relative_movement= False, gripper_distance= 79.0)
+        _ = self.homogenous_transformation_matrix_to_pose(self.base_home_transformation, input_frame_of_reference="panda_link0", move_when_done=True, relative_movement= False, grip= True, gripper_distance= 1.0)
+        _ = self.homogenous_transformation_matrix_to_pose(self.rotate_end_effector_around_z, input_frame_of_reference="panda_hand", move_when_done=True, relative_movement= False, grip= True, gripper_distance= 79.0)
 
 
     def get_transform(self, target_frame, source_frame):
