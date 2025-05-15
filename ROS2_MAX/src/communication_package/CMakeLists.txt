@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.5)
 
 # Declare the package with a project name
-project(rob8_861)  # This is the project name
+project(communication_package)  # This is the project name
 
 # Find necessary dependencies
 find_package(ament_cmake REQUIRED)
@@ -24,7 +24,7 @@ ament_python_install_package(${PROJECT_NAME})
 
 # Install other resources or executable files (if needed)
 install(PROGRAMS
-  src/rob8_861/tcp_server.py 
+  src/communication_package/tcp_server.py 
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>rob8_861</name>
+  <name>communication_package</name>
   <version>0.0.0</version>
-  <description>Package for rob8_861 robot with TCP server and custom messages.</description>
+  <description>Package for communication_package robot with TCP server and custom messages.</description>
 
   <maintainer email="70377798+Jakob-Jorgensen@users.noreply.github.com">max</maintainer>
   <license>Apache-2.0</license>

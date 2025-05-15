@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'rob8_861'
+package_name = 'speech2text'
 
 setup(
     name=package_name,
@@ -9,18 +9,18 @@ setup(
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
-        ('share/' + package_name, ['package.xml'])
+        ('share/' + package_name, ['package.xml']),
     ],
-    install_requires=['setuptools', 'rclpy', 'rob8_interfaces'],
+    install_requires=['setuptools'],
     zip_safe=True,
     maintainer='max',
     maintainer_email='70377798+Jakob-Jorgensen@users.noreply.github.com',
     description='TODO: Package description',
-    license='Apache-2.0',
+    license='TODO: License declaration',
     #tests_require=['pytest'],
-    entry_points={
-        'console_scripts': [
-            'tcp_server = rob8_861.tcp_server:main'
+    entry_points={'console_scripts':[
+        'speech_node = speech2text.speech2text:main',
+	'ux_node = speech2text.ux:main'
         ],
     },
 )
