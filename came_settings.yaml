@@ -78,9 +78,9 @@ hdr_merge.frames_queue_size: 16
 hold_back_imu_for_frames: false
 hole_filling_filter.enable: true
 hole_filling_filter.frames_queue_size: 16
-hole_filling_filter.holes_fill: 1
+hole_filling_filter.holes_fill: 0
 hole_filling_filter.stream_filter: 1
-hole_filling_filter.stream_format_filter: 1
+hole_filling_filter.stream_format_filter: 0
 hole_filling_filter.stream_index_filter: -1
 infra1_info_qos: DEFAULT
 infra1_qos: SYSTEM_DEFAULT
@@ -136,7 +136,7 @@ spatial_filter.holes_fill: 0
 spatial_filter.stream_filter: 1
 spatial_filter.stream_format_filter: 1
 spatial_filter.stream_index_filter: -1
-temporal_filter.enable: false
+temporal_filter.enable: true
 temporal_filter.filter_smooth_alpha: 0.4
 temporal_filter.filter_smooth_delta: 20
 temporal_filter.frames_queue_size: 16

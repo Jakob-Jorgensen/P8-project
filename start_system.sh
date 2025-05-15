@@ -7,7 +7,7 @@ commands=(
   "ros2 run communication_package udp_sender"
   "ros2 run vlm vlm_interface"
   "ros2 run llm llm_interface"
-  "ros2 launch realsense2_camera rs_launch.py config_file:=/home/max/Documents/came_settings.yaml" 
+  "ros2 launch realsense2_camera rs_launch.py config_file:=/home/max/Documents/P8-project/came_settings.yaml" 
  "ros2 run speech2text speech_node" 
  "ros2 run speech2text ux_node"
 )
