@@ -7,13 +7,13 @@ commands=(
   "ros2 run communication_package udp_sender"
   "ros2 run vlm vlm_interface"
   "ros2 run llm llm_interface"
-  "ros2 launch realsense2_camera rs_launch.py config_file:=/home/max/Documents/P8-project/came_settings.yaml" 
+  "ros2 launch realsense2_camera rs_launch.py config_file:=/home/max/Documents/P8-project/camera_config.yaml" 
  "ros2 run speech2text speech_node" 
  "ros2 run speech2text ux_node"
 )
 
 # Launch each command in a new terminal
 for cmd in "${commands[@]}"; do
-  gnome-terminal -- bash -c "$cmd; exec bash"
+  gnome-terminal -- bash -i -c "history -s \"$cmd\"; $cmd; exec bash"
 done
 

@@ -8,7 +8,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 import json
 import re
-
+import time 
 
 model_id = "Qwen/Qwen2.5-7B-Instruct"
 
@@ -68,10 +68,11 @@ class ObjectInfoPublisher(Node):
         super().__init__('object_info_publisher')
         self.publisher = self.create_publisher(LlmCommands, '/LLM_output', 10) 
         self.subscription = self.create_subscription(String,'human_command', self.msg_decrypt,10)
-
+        self.UX_handling = self.create_publisher(String,'/aaulab_output', 10)
     # Function for running the speech2text into the LLM 
     def msg_decrypt(self,msg):
-        user_input = msg.data.strip()  
+        user_input = msg.data.strip() 
+        start_time = time.time()
         print(f"Prompt input: {user_input}")
         if user_input.lower() in ["exit", "quit"]:
             print("Exiting.")
@@ -101,8 +102,10 @@ class ObjectInfoPublisher(Node):
                 "distance": third[3].strip(),
                 "size": third[4].strip()
             }
-            print(json.dumps(clean_output, indent=2))
-            
+            print(json.dumps(clean_output, indent=2)) 
+            end_time = time.time() 
+            elapsed_time = end_time - start_time
+            print(f"Elapsed Time: {elapsed_time}")
             # Send to ROS
             self.publish_info([clean_output])
         
@@ -139,7 +142,10 @@ class ObjectInfoPublisher(Node):
         
         if LLM_model.object == LLM_model.description == LLM_model.side == LLM_model.distance == LLM_model.size =="non": 
 
-            self.get_logger().info("No objects was found.")
+            #self.get_logger().info("No objects was found.")  
+            error_msg = String()
+            error_msg.data = "Sorry I did not understand that please ask for an object that is on the table." 
+            self.UX_handling.publish(error_msg)
             return
 
         else:

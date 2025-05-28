@@ -452,8 +452,9 @@ class GGCNNNode(Node):
         # Subscriptions
         self.mask_sub = self.create_subscription(
             Image, '/ggcnn_mask',
-            self.gg_cnn_callback, 10)
-
+            self.gg_cnn_callback, 10) 
+        
+        self.count = 0
         
         # Publisher
         self.publisher_ = self.create_publisher(Command, '/grasp_positions', 10) 
@@ -504,9 +505,10 @@ class GGCNNNode(Node):
         grasp_img = drawGrasps(self.latest_RGB_image,[[y_orig,x_orig,object_angle,grasp_width_pixels]],mode='line')
         
         
-        cv2.imshow("inpainted_grasp_img", grasp_img)   
+        cv2.imshow("inpainted_grasp_img", grasp_img)    
+        cv2.imwrite(f"/home/max/Documents/tests/{self.count}_rgb.png",grasp_img)
         #cv2.imshow("test",grasp_test)
-
+        self.count += 1 
         cv2.waitKey(1)
 
 
